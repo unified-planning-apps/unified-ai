@@ -258,7 +258,7 @@ def create_application() -> FastAPI:
     @app.get(
         "/health",
         summary="Health check",
-        tags=["🔧 Système"],
+        tags=["Système"],
         response_class=ORJSONResponse,
     )
     async def health_check(request: Request) -> dict:
