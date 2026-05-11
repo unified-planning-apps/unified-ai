@@ -1,6 +1,4 @@
 """
-src/utils/constants.py
-========================
 Constantes globales, enums et valeurs de référence pour tout le projet.
 """
 
@@ -48,7 +46,7 @@ class ClassificationNutritionOMS(str, Enum):
     URGENCE    = "urgence"      # GAM 10–15%
     CRISE      = "crise"        # GAM > 15%
 
-SEUILS_GAM = {
+SEUILS_GAM = { 
     "acceptable": 5.0,
     "alerte":    10.0,
     "urgence":   15.0,
