@@ -1,0 +1,33 @@
+# Environnement virtuel
+venv/
+.env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Data / ML artifacts
+data/raw/
+data/processed/
+data/models/
+ml/experiments/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# ML / notebooks checkpoints
+.ipynb_checkpoints/
+
+# Python build
+build/
+dist/
+*.egg-info/
