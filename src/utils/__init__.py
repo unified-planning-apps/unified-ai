@@ -6,7 +6,6 @@ from src.utils.logger import setup_logging, get_logger
 from src.utils.constants import (
     UserRole,
     REGIONS_MADAGASCAR,
-    REGION_NAMES,
     COULEURS_ALERTE,
     get_saison_courante,
 )
@@ -16,7 +15,6 @@ __all__ = [
     "get_logger",
     "UserRole",
     "REGIONS_MADAGASCAR",
-    "REGION_NAMES",
     "COULEURS_ALERTE",
     "get_saison_courante",
 ]

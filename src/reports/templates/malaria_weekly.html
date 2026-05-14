@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="{{ langue or 'fr' }}">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport Hebdomadaire Paludisme - {{ region_name }}</title>
+
+    <style>
+        body {
+            font-family: "DejaVu Sans", Arial, sans-serif;
+            color: #222;
+            margin: 0;
+            padding: 0;
+            background: #f4f7fb;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            margin: auto;
+            background: white;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #00AEEF, #374EA2);
+            color: white;
+            padding: 30px;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            height: 60px;
+        }
+
+        .title {
+            margin-top: 20px;
+        }
+
+        .title h1 {
+            margin: 0;
+            font-size: 32px;
+        }
+
+        .subtitle {
+            opacity: 0.9;
+            margin-top: 6px;
+        }
+
+        .meta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section-title {
+            color: #374EA2;
+            border-left: 6px solid #00AEEF;
+            padding-left: 12px;
+            margin-top: 35px;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .card {
+            background: #f7f9fc;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .card h3 {
+            margin: 0;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .card .value {
+            margin-top: 10px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #374EA2;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .table th {
+            background: #00AEEF;
+            color: white;
+            text-align: left;
+            padding: 12px;
+        }
+
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .alert-box {
+            border-left: 5px solid #F57C00;
+            background: #FFF8E1;
+            padding: 18px;
+            margin-top: 16px;
+            border-radius: 8px;
+        }
+
+        .crisis-box {
+            border-left: 5px solid #D32F2F;
+            background: #FFEBEE;
+            padding: 18px;
+            margin-top: 16px;
+            border-radius: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .vert { background: #2E7D32; }
+        .jaune { background: #F9A825; }
+        .orange { background: #F57C00; }
+        .rouge { background: #D32F2F; }
+
+        .map-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .map-container img {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid #ddd;
+        }
+
+        .footer {
+            margin-top: 40px;
+            background: #f1f5f9;
+            padding: 20px 30px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .prediction-box {
+            background: #EEF6FF;
+            border-left: 5px solid #00AEEF;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+
+            .container {
+                max-width: 100%;
+            }
+
+            .card {
+                break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-top">
+            <div>
+                <h2>{{ organisation }}</h2>
+                <div>Rapport Épidémiologique Hebdomadaire</div>
+            </div>
+
+            {% if logo_url %}
+            <img src="{{ logo_url }}" class="logo" alt="UNICEF">
+            {% endif %}
+        </div>
+
+        <div class="title">
+            <h1>Surveillance du Paludisme</h1>
+            <div class="subtitle">
+                Région : {{ region_name }}
+                {% if region_chef_lieu %}
+                    — Chef-lieu : {{ region_chef_lieu }}
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="meta">
+            <div><strong>Semaine :</strong> {{ semaine }}</div>
+            <div><strong>Période :</strong> {{ date_debut|date_fr }} → {{ date_fin|date_fr }}</div>
+            <div><strong>Généré le :</strong> {{ date_generation|date_fr }}</div>
+            <div><strong>ID Rapport :</strong> {{ rapport_id }}</div>
+        </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+        <!-- KPI -->
+        <h2 class="section-title">Indicateurs Clés</h2>
+
+        <div class="stats-grid">
+
+            <div class="card">
+                <h3>Cas confirmés</h3>
+                <div class="value">
+                    {{ cas_semaine.cas_confirmes|nombre_fr }}
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Cas suspects</h3>
+                <div class="value">
+                    {{ cas_semaine.cas_suspects|nombre_fr }}
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Décès</h3>
+                <div class="value">
+                    {{ cas_semaine.deces|nombre_fr }}
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Hospitalisations</h3>
+                <div class="value">
+                    {{ cas_semaine.hospitalisations|nombre_fr }}
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Taux positivité TDR</h3>
+                <div class="value">
+                    {{ cas_semaine.taux_positivite_tdr_pct|pourcentage }}
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ALERTES -->
+        <h2 class="section-title">Alertes Prioritaires</h2>
+
+        {% if alertes_malaria %}
+            {% for alerte in alertes_malaria %}
+
+                <div class="{% if alerte.severite == 'crise' %}crisis-box{% else %}alert-box{% endif %}">
+                    <h3>
+                        {{ alerte.titre or "Alerte épidémiologique" }}
+                    </h3>
+
+                    <p>
+                        {{ alerte.message or "Une augmentation inhabituelle des cas a été détectée." }}
+                    </p>
+
+                    <p>
+                        <strong>Niveau :</strong>
+                        <span class="badge {{ alerte.severite|niveau_css }}">
+                            {{ alerte.severite|upper }}
+                        </span>
+                    </p>
+
+                    {% if alerte.recommandations %}
+                    <ul>
+                        {% for rec in alerte.recommandations %}
+                            <li>{{ rec }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+
+            {% endfor %}
+        {% else %}
+            <p>Aucune alerte critique détectée pour cette période.</p>
+        {% endif %}
+
+        <!-- TENDANCE -->
+        <h2 class="section-title">Tendance Hebdomadaire</h2>
+
+        {% if tendance_data %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Semaine</th>
+                    <th>Cas Confirmés</th>
+                    <th>Tendance Lissée</th>
+                    <th>Incidence</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for row in tendance_data %}
+                <tr>
+                    <td>S{{ row.semaine_epidemio }}</td>
+                    <td>{{ row.cas_confirmes|nombre_fr }}</td>
+                    <td>{{ row.cas_lisse|nombre_fr }}</td>
+                    <td>{{ row.taux_incidence_pour_mille or 0 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <p>Données de tendance indisponibles.</p>
+        {% endif %}
+
+        <!-- PREDICTIONS -->
+        <h2 class="section-title">Prévisions IA — 14 jours</h2>
+
+        {% if prediction_malaria %}
+        <div class="prediction-box">
+
+            <p>
+                <strong>Risque prédit :</strong>
+
+                <span class="badge {{ prediction_malaria.niveau_risque|niveau_css }}">
+                    {{ prediction_malaria.niveau_risque or "N/A" }}
+                </span>
+            </p>
+
+            <p>
+                <strong>Probabilité estimée :</strong>
+                {{ prediction_malaria.probabilite|pourcentage }}
+            </p>
+
+            <p>
+                <strong>Tendance attendue :</strong>
+                {{ prediction_malaria.tendance or "Stable" }}
+            </p>
+
+            {% if prediction_malaria.recommandations %}
+            <h4>Actions recommandées :</h4>
+            <ul>
+                {% for rec in prediction_malaria.recommandations %}
+                <li>{{ rec }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+        </div>
+        {% else %}
+            <p>Aucune prédiction IA disponible pour cette région.</p>
+        {% endif %}
+
+        <!-- FACTEURS -->
+        <h2 class="section-title">Facteurs de Risque</h2>
+
+        {% if facteurs_risque %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Facteur</th>
+                    <th>Valeur</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for key, value in facteurs_risque.items() %}
+                <tr>
+                    <td>{{ key.replace('_', ' ')|title }}</td>
+                    <td>{{ value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <p>Aucun facteur de risque disponible.</p>
+        {% endif %}
+
+        <!-- SHAP -->
+        {% if shap_data %}
+        <h2 class="section-title">Explainabilité du Modèle (SHAP)</h2>
+
+        <p>
+            Les variables suivantes influencent principalement les prédictions du modèle IA.
+        </p>
+
+        {% if shap_data.summary_plot %}
+        <div class="map-container">
+            <img src="{{ shap_data.summary_plot }}" alt="SHAP Summary">
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <!-- MAP -->
+        {% if carte_risque_url %}
+        <h2 class="section-title">Carte de Risque Régionale</h2>
+
+        <div class="map-container">
+            <img src="{{ carte_risque_url }}" alt="Carte Risque">
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+        <p>
+            Rapport généré automatiquement par la plateforme de surveillance
+            épidémiologique UNICEF Madagascar.
+        </p>
+
+        <p>
+            Les prédictions IA sont des outils d’aide à la décision et ne remplacent
+            pas l’expertise médicale ou les validations terrain.
+        </p>
+    </div>
+
+</div>
+
+</body>
+</html>

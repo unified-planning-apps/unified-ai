@@ -22,7 +22,6 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from geoalchemy2 import Geometry
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey,
     Index, Integer, Numeric, SmallInteger, String, Text, UniqueConstraint,
@@ -32,6 +31,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from src.database import Base
+from geoalchemy2 import Geometry
 
 
 # ─────────────────────────────────────────────────────────────────

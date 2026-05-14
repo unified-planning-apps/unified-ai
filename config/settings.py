@@ -51,7 +51,9 @@ class WeatherAPISettings(BaseSettings):
         default="https://api.openweathermap.org/data/2.5",
         alias="OPENWEATHER_BASE_URL",
     )
-    copernicus_api_key: str = Field(default="", alias="COPERNICUS_API_KEY")
+    copernicus_username: str = Field(default="", alias="COPERNICUS_USERNAME")
+
+    copernicus_password: str = Field(default="", alias="COPERNICUS_PASSWORD")
     nasa_power_base_url: str = Field(
         default="https://power.larc.nasa.gov/api/temporal/daily/point",
         alias="NASA_POWER_BASE_URL",
@@ -79,10 +81,10 @@ class HealthAPISettings(BaseSettings):
 
 class NutritionAPISettings(BaseSettings):
     fao_base_url: str = Field(
-        default="http://www.fao.org/faostat/api/v1", alias="FAO_API_BASE_URL"
+        default="https://openknowledge.fao.org/server", alias="FAO_API_BASE_URL"
     )
     wfp_base_url: str = Field(
-        default="https://api.wfp.org/vam-data-bridges/2.0", alias="WFP_API_BASE_URL"
+        default="https://api.efs.wfp.org/gefs", alias="WFP_API_BASE_URL"
     )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -111,7 +113,7 @@ class MLSettings(BaseSettings):
         "urgence_critique": 100.0,  # GAM > 15%
     }
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", protected_namespaces=())
 
 
 class MinIOSettings(BaseSettings):
@@ -168,7 +170,7 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/3", alias="CELERY_RESULT_BACKEND"
     )
     celery_timezone: str = Field(
-        default="Indian/Antananarivo", alias="CELERY_TIMEZONE"
+        default="Africa/Nairobi", alias="CELERY_TIMEZONE"
     )
 
     # Rapports

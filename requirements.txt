@@ -1,16 +1,9 @@
 # malaria-nutrition-predictor/
 # │
 # ├── README.md
-# ├── requirements.txt
-# ├── pyproject.toml
 # ├── Dockerfile
 # ├── docker-compose.yml
-# ├── .env.example
 # │
-# ├── config/
-# │   ├── settings.py                 # Configuration centralisée
-# │   ├── logging_config.yaml
-# │   └── regions_metadata.json       # Metadata 22 régions
 # │
 # ├── data/
 # │   ├── raw/                        # Données brutes (git-ignored)
@@ -18,91 +11,11 @@
 # │   ├── external/                   # Données tierces (shapefiles, etc.)
 # │   └── models/                     # Modèles sérialisés (.pkl, .h5)
 # │
-# ├── src/
-# │   ├── __init__.py
-# │   │
-# │   ├── api/                        # Backend FastAPI
-# │   │   ├── __init__.py
-# │   │   ├── main.py                 # Entry point
-# │   │   ├── dependencies.py
-# │   │   ├── routers/
-# │   │   │   ├── weather.py          # Endpoints météo
-# │   │   │   ├── malaria.py          # Endpoints paludisme
-# │   │   │   ├── nutrition.py        # Endpoints nutrition
-# │   │   │   ├── reports.py          # Génération rapports
-# │   │   │   └── predictions.py      # Prédictions combinées
-# │   │   └── middleware/
-# │   │       ├── auth.py             # Authentification
-# │   │       └── rate_limiting.py
-# │   │
-# │   ├── data_collection/            # Collecte données temps réel
-# │   │   ├── __init__.py
-# │   │   ├── weather_fetcher.py      # OpenWeatherMap, Copernicus
-# │   │   ├── malaria_fetcher.py      # DHIS2, WHO
-# │   │   ├── nutrition_fetcher.py    # FAO, WFP
-# │   │   └── scheduler.py            # Celery tasks
-# │   │
-# │   ├── preprocessing/
-# │   │   ├── __init__.py
-# │   │   ├── weather_processor.py
-# │   │   ├── health_processor.py
-# │   │   ├── geo_processor.py        # PostGIS queries
-# │   │   └── feature_engineering.py
-# │   │
-# │   ├── models/
-# │   │   ├── __init__.py
-# │   │   ├── malaria_predictor.py    # XGBoost model
-# │   │   ├── nutrition_predictor.py  # Ensemble model
-# │   │   ├── weather_forecaster.py   # LSTM model
-# │   │   ├── base_model.py           # Interface commune
-# │   │   └── explainability.py       # SHAP, visualisations
-# │   │
-# │   ├── reports/
-# │   │   ├── __init__.py
-# │   │   ├── generator.py            # Orchestration
-# │   │   ├── templates/
-# │   │   │   ├── malaria_weekly.html
-# │   │   │   └── nutrition_weekly.html
-# │   │   ├── recipe_selector.py      # Algorithme sélection recettes
-# │   │   └── visualizations.py       # Cartes, graphiques
-# │   │
-# │   ├── database/
-# │   │   ├── __init__.py
-# │   │   ├── models.py               # SQLAlchemy ORM
-# │   │   ├── migrations/             # Alembic
-# │   │   └── repositories/
-# │   │       ├── weather_repo.py
-# │   │       ├── malaria_repo.py
-# │   │       └── nutrition_repo.py
-# │   │
-# │   └── utils/
-# │       ├── __init__.py
-# │       ├── logger.py
-# │       ├── validators.py
-# │       ├── constants.py
-# │       └── geo_helpers.py
-# │
-# ├── ml/                             # Expérimentations ML
-# │   ├── notebooks/
-# │   │   ├── 01_eda_weather.ipynb
-# │   │   ├── 02_malaria_modeling.ipynb
-# │   │   └── 03_nutrition_modeling.ipynb
-# │   ├── experiments/                # MLflow artifacts
-# │   └── training_scripts/
-# │       ├── train_malaria.py
-# │       ├── train_nutrition.py
-# │       └── evaluate.py
-# │
 # ├── tests/
 # │   ├── unit/
 # │   ├── integration/
 # │   └── e2e/
 # │
-# ├── scripts/
-# │   ├── init_db.py
-# │   ├── seed_regions.py
-# │   ├── backfill_historical.py      # Import données historiques
-# │   └── deploy.sh
 # │
 # └── docs/
 #     ├── api_documentation.md

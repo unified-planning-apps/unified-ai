@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="{{ langue or 'fr' }}">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport Nutrition Hebdomadaire - {{ region_name }}</title>
+
+    <style>
+        body {
+            font-family: "DejaVu Sans", Arial, sans-serif;
+            background: #f4f7fb;
+            margin: 0;
+            color: #222;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: auto;
+            background: white;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2E7D32, #00AEEF);
+            color: white;
+            padding: 30px;
+        }
+
+        .header-flex {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            height: 60px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section-title {
+            color: #2E7D32;
+            border-left: 6px solid #00AEEF;
+            padding-left: 12px;
+            margin-top: 40px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+            margin-top: 20px;
+        }
+
+        .card {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .card-title {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .card-value {
+            font-size: 28px;
+            font-weight: bold;
+            margin-top: 10px;
+            color: #2E7D32;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .table th {
+            background: #00AEEF;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .recipe-card {
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            background: #fafafa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .vert { background: #2E7D32; }
+        .jaune { background: #F9A825; }
+        .orange { background: #F57C00; }
+        .rouge { background: #D32F2F; }
+
+        .prediction-box {
+            background: #EEF6FF;
+            border-left: 5px solid #00AEEF;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .footer {
+            background: #f1f5f9;
+            padding: 20px 30px;
+            margin-top: 40px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+
+        <div class="header-flex">
+
+            <div>
+                <h2>{{ organisation }}</h2>
+                <p>Rapport Hebdomadaire Nutritionnel</p>
+            </div>
+
+            {% if logo_url %}
+            <img src="{{ logo_url }}" class="logo" alt="UNICEF">
+            {% endif %}
+        </div>
+
+        <h1>Surveillance Nutritionnelle — {{ region_name }}</h1>
+
+        <p>
+            Période :
+            {{ date_debut|date_fr }}
+            →
+            {{ date_fin|date_fr }}
+        </p>
+
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+        <!-- STATUS -->
+        <h2 class="section-title">Statut Nutritionnel</h2>
+
+        <div class="grid">
+
+            <div class="card">
+                <div class="card-title">Taux GAM</div>
+                <div class="card-value">
+                    {{ statut_nutritionnel.gam_pct or 0 }}%
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Enfants Dépistés</div>
+                <div class="card-value">
+                    {{ statut_nutritionnel.enfants_depistes|nombre_fr }}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Cas MAS</div>
+                <div class="card-value">
+                    {{ statut_nutritionnel.mas|nombre_fr }}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Cas MAM</div>
+                <div class="card-value">
+                    {{ statut_nutritionnel.mam|nombre_fr }}
+                </div>
+            </div>
+
+        </div>
+
+        <!-- DISPONIBILITE -->
+        <h2 class="section-title">Disponibilité Alimentaire</h2>
+
+        {% if disponibilite %}
+        <table class="table">
+
+            <thead>
+                <tr>
+                    <th>Produit</th>
+                    <th>Disponibilité</th>
+                    <th>Prix Moyen</th>
+                    <th>Tendance</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% for item in disponibilite.produits %}
+                <tr>
+                    <td>{{ item.nom }}</td>
+                    <td>{{ item.disponibilite }}</td>
+                    <td>{{ item.prix_moyen }}</td>
+                    <td>{{ item.tendance }}</td>
+                </tr>
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+        {% else %}
+            <p>Aucune donnée alimentaire disponible.</p>
+        {% endif %}
+
+        <!-- SOUDURE -->
+        <h2 class="section-title">Période de Soudure</h2>
+
+        {% if soudure %}
+        <div class="prediction-box">
+
+            <p>
+                <strong>Niveau :</strong>
+
+                <span class="badge {{ soudure.niveau|niveau_css }}">
+                    {{ soudure.niveau or 'N/A' }}
+                </span>
+            </p>
+
+            <p>
+                {{ soudure.description or "Aucune description disponible." }}
+            </p>
+
+        </div>
+        {% else %}
+            <p>Aucune donnée de soudure disponible.</p>
+        {% endif %}
+
+        <!-- RECETTES -->
+        <h2 class="section-title">Recettes Nutritionnelles Recommandées</h2>
+
+        {% if recettes %}
+
+            {% for recette in recettes %}
+            <div class="recipe-card">
+
+                <h3>{{ recette.nom }}</h3>
+
+                <p>
+                    <strong>Calories :</strong>
+                    {{ recette.calories or 'N/A' }}
+                </p>
+
+                <p>
+                    <strong>Ingrédients :</strong>
+                </p>
+
+                <ul>
+                    {% for ingredient in recette.ingredients %}
+                    <li>{{ ingredient }}</li>
+                    {% endfor %}
+                </ul>
+
+                {% if recette.instructions %}
+                <p>
+                    <strong>Préparation :</strong>
+                </p>
+
+                <ol>
+                    {% for step in recette.instructions %}
+                    <li>{{ step }}</li>
+                    {% endfor %}
+                </ol>
+                {% endif %}
+
+            </div>
+            {% endfor %}
+
+        {% else %}
+            <p>Aucune recette recommandée disponible.</p>
+        {% endif %}
+
+        <!-- PREDICTION -->
+        <h2 class="section-title">Prévision Nutritionnelle IA</h2>
+
+        {% if prediction_nutrition %}
+        <div class="prediction-box">
+
+            <p>
+                <strong>Risque Nutritionnel :</strong>
+
+                <span class="badge {{ prediction_nutrition.niveau_risque|niveau_css }}">
+                    {{ prediction_nutrition.niveau_risque }}
+                </span>
+            </p>
+
+            <p>
+                <strong>Taux GAM Prévu :</strong>
+                {{ prediction_nutrition.gam_prevu or 'N/A' }}%
+            </p>
+
+            <p>
+                <strong>Population Vulnérable Estimée :</strong>
+                {{ prediction_nutrition.population_vulnerable|nombre_fr }}
+            </p>
+
+            {% if prediction_nutrition.recommandations %}
+            <h4>Recommandations :</h4>
+
+            <ul>
+                {% for rec in prediction_nutrition.recommandations %}
+                <li>{{ rec }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+        </div>
+        {% else %}
+            <p>Aucune prédiction nutritionnelle disponible.</p>
+        {% endif %}
+
+        <!-- STOCKS -->
+        {% if stocks %}
+        <h2 class="section-title">État des Stocks Nutritionnels</h2>
+
+        <table class="table">
+
+            <thead>
+                <tr>
+                    <th>Produit</th>
+                    <th>Stock Disponible</th>
+                    <th>Seuil Critique</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for nom, stock in stocks.items() %}
+                <tr>
+                    <td>{{ nom }}</td>
+                    <td>{{ stock.disponible }}</td>
+                    <td>{{ stock.seuil }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+
+        </table>
+        {% endif %}
+
+        <!-- CARTE -->
+        {% if carte_risque_url %}
+        <h2 class="section-title">Carte de Vulnérabilité</h2>
+
+        <img
+            src="{{ carte_risque_url }}"
+            alt="Carte Nutrition"
+            style="width:100%; border-radius:12px; border:1px solid #ddd;"
+        >
+        {% endif %}
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+
+        <p>
+            Rapport généré automatiquement par la plateforme UNICEF Madagascar.
+        </p>
+
+        <p>
+            Les données nutritionnelles et projections IA doivent être validées
+            par les équipes terrain et partenaires sanitaires.
+        </p>
+
+    </div>
+
+</div>
+
+</body>
+</html>

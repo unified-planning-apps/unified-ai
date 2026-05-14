@@ -1,0 +1,369 @@
+# ============================================================
+# UNICEF Madagascar — Logging Configuration
+# Projet : Malaria & Nutrition Prediction Platform
+# ============================================================
+#
+# Ce fichier centralise toute la configuration logging :
+#   - API FastAPI
+#   - Workers Celery
+#   - Pipeline ML
+#   - Génération rapports
+#   - Monitoring production
+#
+# Compatible :
+#   - Loguru
+#   - ELK Stack
+#   - Datadog
+#   - Grafana Loki
+#   - Docker / Kubernetes
+#
+# ============================================================
+
+app:
+  name: "unicef-malaria-predictor"
+  environment: "development"   # development | staging | production
+  debug: true
+
+# ============================================================
+# CONFIGURATION GLOBALE
+# ============================================================
+
+logging:
+
+  enabled: true
+
+  # Niveau global
+  level: "DEBUG"
+
+  # Format sortie console
+  console_format: >
+    <green>{time:YYYY-MM-DD HH:mm:ss}</green> |
+    <level>{level: <8}</level> |
+    <cyan>{name}</cyan>:<cyan>{line}</cyan> |
+    <level>{message}</level>
+
+  # Format fichier
+  file_format: >
+    {time:YYYY-MM-DD HH:mm:ss.SSS} |
+    {level: <8} |
+    {name}:{line} |
+    {message}
+
+  # JSON structuré (ELK / Datadog)
+  json_logs: false
+
+  # Colorisation console
+  colorize: true
+
+  # Active les traces détaillées Loguru
+  backtrace: true
+
+  # Diagnose = variables locales dans stacktrace
+  diagnose: true
+
+# ============================================================
+# FICHIERS LOGS
+# ============================================================
+
+files:
+
+  api:
+    enabled: true
+    path: "logs/api/api.log"
+    rotation: "1 week"
+    retention: "2 months"
+    compression: "gz"
+    level: "INFO"
+
+  ml:
+    enabled: true
+    path: "logs/ml/training.log"
+    rotation: "500 MB"
+    retention: "6 months"
+    compression: "gz"
+    level: "DEBUG"
+
+  scheduler:
+    enabled: true
+    path: "logs/scheduler/celery.log"
+    rotation: "250 MB"
+    retention: "3 months"
+    compression: "gz"
+    level: "INFO"
+
+  reports:
+    enabled: true
+    path: "logs/reports/reports.log"
+    rotation: "100 MB"
+    retention: "2 months"
+    compression: "gz"
+    level: "INFO"
+
+  alerts:
+    enabled: true
+    path: "logs/alerts/critical_alerts.log"
+    rotation: "50 MB"
+    retention: "12 months"
+    compression: "gz"
+    level: "WARNING"
+
+# ============================================================
+# LOGS STRUCTURÉS MÉTIER
+# ============================================================
+
+events:
+
+  http_requests:
+    enabled: true
+    include_user_id: true
+    include_request_id: true
+    include_ip: true
+    slow_request_threshold_ms: 1200
+
+  predictions:
+    enabled: true
+    include_features: false
+    include_model_version: true
+    include_latency: true
+
+  alerts:
+    enabled: true
+    notify_on_crisis: true
+    notify_on_urgence: true
+
+  data_collection:
+    enabled: true
+    log_empty_results: true
+    log_external_api_errors: true
+
+  ml_training:
+    enabled: true
+    log_metrics: true
+    log_hyperparameters: true
+    log_feature_importance: true
+
+  reports:
+    enabled: true
+    log_generation_time: true
+    log_pdf_size: true
+
+# ============================================================
+# FASTAPI
+# ============================================================
+
+fastapi:
+
+  access_logs: true
+
+  ignored_routes:
+    - "/health"
+    - "/metrics"
+    - "/favicon.ico"
+
+  log_request_body: false
+  log_response_body: false
+
+  trusted_proxies:
+    - "127.0.0.1"
+    - "localhost"
+
+# ============================================================
+# CELERY / WORKERS
+# ============================================================
+
+celery:
+
+  hijack_root_logger: false
+
+  task_logs: true
+
+  worker:
+    redirect_stdouts: true
+    redirect_stdouts_level: "INFO"
+
+  queues:
+    weather: "INFO"
+    malaria: "INFO"
+    nutrition: "INFO"
+    reports: "DEBUG"
+
+# ============================================================
+# MACHINE LEARNING
+# ============================================================
+
+ml:
+
+  tracking:
+
+    enabled: true
+
+    log_predictions: true
+
+    log_training_duration: true
+
+    save_feature_importance: true
+
+    save_confusion_matrix: true
+
+  drift_detection:
+
+    enabled: true
+
+    warning_threshold: 0.15
+
+    critical_threshold: 0.30
+
+  explainability:
+
+    shap_logging: true
+
+    save_shap_plots: true
+
+# ============================================================
+# ALERTES & CRISES
+# ============================================================
+
+epidemiology:
+
+  malaria:
+
+    seuils:
+
+      surveillance: 0.30
+      alerte: 0.50
+      urgence: 0.70
+      crise: 0.85
+
+  nutrition:
+
+    gam:
+
+      acceptable: 5.0
+      alerte: 10.0
+      urgence: 15.0
+
+# ============================================================
+# EXPORT / OBSERVABILITÉ
+# ============================================================
+
+observability:
+
+  elk:
+    enabled: false
+    host: "localhost"
+    port: 9200
+    index: "unicef-malaria-logs"
+
+  loki:
+    enabled: false
+    url: "http://localhost:3100"
+
+  datadog:
+    enabled: false
+    api_key_env: "DATADOG_API_KEY"
+
+# ============================================================
+# SÉCURITÉ & CONFORMITÉ UNICEF
+# ============================================================
+
+security:
+
+  anonymize_health_data: true
+
+  mask_fields:
+    - "password"
+    - "token"
+    - "authorization"
+    - "access_token"
+
+  pii_protection: true
+
+  audit_logs: true
+
+  audit_log_path: "logs/security/audit.log"
+
+# ============================================================
+# ENVIRONNEMENTS
+# ============================================================
+
+environments:
+
+  development:
+    level: "DEBUG"
+    json_logs: false
+    diagnose: true
+    colorize: true
+
+  staging:
+    level: "INFO"
+    json_logs: true
+    diagnose: false
+    colorize: false
+
+  production:
+    level: "WARNING"
+    json_logs: true
+    diagnose: false
+    colorize: false
+
+# ============================================================
+# HEALTHCHECKS LOGGING
+# ============================================================
+
+healthchecks:
+
+  enabled: true
+
+  services:
+    - postgres
+    - redis
+    - dhis2
+    - openweathermap
+    - ml_models
+
+  interval_minutes: 15
+
+# ============================================================
+# ROTATION D'URGENCE
+# ============================================================
+
+emergency:
+
+  disk_usage_threshold_pct: 85
+
+  auto_cleanup: true
+
+  cleanup_keep_days: 15
+
+# ============================================================
+# EXEMPLES ÉVÉNEMENTS STRUCTURÉS
+# ============================================================
+
+examples:
+
+  prediction: |
+    {
+      "event": "prediction",
+      "region_id": "ANALAMANGA",
+      "modele": "xgboost_v2",
+      "score": 0.82,
+      "niveau": "urgence",
+      "horizon_jours": 14
+    }
+
+  alert: |
+    {
+      "event": "alerte",
+      "type_alerte": "paludisme",
+      "severite": "crise",
+      "region_id": "VATOVAVY"
+    }
+
+  request: |
+    {
+      "event": "http_request",
+      "method": "POST",
+      "path": "/api/v1/predict/malaria",
+      "status_code": 200,
+      "duration_ms": 342
+    }
