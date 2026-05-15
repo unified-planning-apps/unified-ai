@@ -54,7 +54,7 @@ class CasPaludisme(BaseModel):
     annee: int
     date_rapport: date
     cas_confirmes: int = Field(..., ge=0)
-    cas_suspects: int = Field(..., ge=0)
+    cas_confirmes_mixte: int = Field(..., ge=0)
     deces: int = Field(..., ge=0)
     hospitalisations: int = Field(..., ge=0)
     taux_incidence_pour_mille: float

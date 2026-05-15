@@ -29,7 +29,7 @@ from loguru import logger
 # ─────────────────────────────────────────────────────────────────
 EPIDEMIO_BOUNDS: Dict[str, Tuple[float, float]] = {
     "cas_confirmes":          (0, 500_000),
-    "cas_suspects":           (0, 1_000_000),
+    "cas_confirmes_mixte":           (0, 1_000_000),
     "deces":                  (0, 10_000),
     "hospitalisations":       (0, 100_000),
     "taux_positivite_tdr_pct":(0, 100),
@@ -89,9 +89,9 @@ class HealthProcessor:
                     continue
                 c[var] = int(np.clip(float(val), lo, hi))
 
-            # Recalcul cohérence : cas_confirmes ≤ cas_suspects + 20%
+            # Recalcul cohérence : cas_confirmes ≤ cas_confirmes_mixte + 20%
             cas_conf = c.get("cas_confirmes", 0)
-            cas_susp = c.get("cas_suspects", 0)
+            cas_susp = c.get("cas_confirmes_mixte", 0)
             if cas_conf > cas_susp * 1.2 and cas_susp > 0:
                 logger.debug(
                     "Incohérence cas S{}-{}: confirmes={} > suspects={}",
@@ -101,7 +101,7 @@ class HealthProcessor:
                 c["fiabilite_donnees"] = "incomplète"
 
             # Recalcul taux positivité si TDR disponible
-            tdr_total = c.get("tdr_effectues", 0)
+            tdr_total = c.get("tests_malaria", 0)
             tdr_pos   = c.get("tdr_positifs", 0)
             if tdr_total > 0 and tdr_pos >= 0:
                 c["taux_positivite_tdr_pct"] = round(
@@ -147,7 +147,7 @@ class HealthProcessor:
                     "semaine_epidemio":   semaine,
                     "date_rapport":       str(current),
                     "cas_confirmes":      0,
-                    "cas_suspects":       0,
+                    "cas_confirmes_mixte":       0,
                     "deces":              0,
                     "hospitalisations":   0,
                     "taux_incidence_pour_mille": 0.0,

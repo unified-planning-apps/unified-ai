@@ -68,7 +68,7 @@ class WeatherAPISettings(BaseSettings):
 
 class HealthAPISettings(BaseSettings):
     dhis2_base_url: str = Field(
-        default="https://dhis.moh.gov.mg/api", alias="DHIS2_BASE_URL"
+        default="https://play.im.dhis2.org/dev/api", alias="DHIS2_BASE_URL"
     )
     dhis2_username: str = Field(default="", alias="DHIS2_USERNAME")
     dhis2_password: str = Field(default="", alias="DHIS2_PASSWORD")

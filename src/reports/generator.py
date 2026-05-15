@@ -204,7 +204,7 @@ class ReportGenerator:
                     last = records[-1]
                     context["cas_semaine"] = {
                         "cas_confirmes":    last.get("cas_confirmes", 0),
-                        "cas_suspects":     last.get("cas_suspects", 0),
+                        "cas_confirmes_mixte":     last.get("cas_confirmes_mixte", 0),
                         "deces":            last.get("deces", 0),
                         "hospitalisations": last.get("hospitalisations", 0),
                         "taux_positivite_tdr_pct": last.get("taux_positivite_tdr_pct", 0),

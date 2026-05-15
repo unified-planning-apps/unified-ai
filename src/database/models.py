@@ -57,38 +57,29 @@ class TimestampMixin:
 # Météo
 # ─────────────────────────────────────────────────────────────────
 
-class WeatherObservation(TimestampMixin, Base):
-    """
-    Observations météo horaires/journalières par région.
-    Source : OpenWeatherMap, NASA POWER.
-    """
+class WeatherObservation(Base):
     __tablename__ = "weather_observations"
-    __table_args__ = (
-        UniqueConstraint("region_id", "horodatage", name="uq_weather_region_time"),
-        Index("ix_weather_region_date", "region_id", "horodatage"),
-        Index("ix_weather_horodatage", "horodatage"),
-    )
 
-    id              = Column(BigInteger, primary_key=True, autoincrement=True)
-    region_id       = Column(String(20), nullable=False)
-    horodatage      = Column(DateTime(timezone=True), nullable=False)
-    temperature_c   = Column(Float)
-    temperature_min_c = Column(Float)
-    temperature_max_c = Column(Float)
-    humidite_pct    = Column(Float)
-    precipitations_mm = Column(Float, default=0.0)
-    vent_kmh        = Column(Float)
-    pression_hpa    = Column(Float)
-    couverture_nuageuse_pct = Column(Float)
-    rayonnement_solaire_mj  = Column(Float)
-    humidite_sol_fraction   = Column(Float)
-    indice_uv       = Column(Float)
-    description     = Column(String(200))
-    source          = Column(String(50), default="OpenWeatherMap")
-    raw_json        = Column(JSONB)  # Réponse API brute
+    id = Column(BigInteger, primary_key=True)
 
-    def __repr__(self) -> str:
-        return f"<WeatherObs region={self.region_id} t={self.horodatage}>"
+    region_code = Column(String(20), nullable=False)
+    timestamp_utc = Column(DateTime(timezone=True), nullable=False)
+
+    temp_min_c = Column(Float)
+    temp_max_c = Column(Float)
+    temperature_c = Column(Float)
+
+    humidite_pct = Column(Float)
+    precipitation_mm = Column(Float)
+
+    vitesse_vent_kmh = Column(Float)
+
+    ndvi = Column(Float)
+    altitude_m = Column(Float)
+
+    source_api = Column(String(50))
+    raw_payload = Column(JSONB)
+    qualite_flag = Column(SmallInteger, nullable=False, default=0)
 
 
 class GeoNDVI(TimestampMixin, Base):
@@ -149,7 +140,7 @@ class MalariaCase(TimestampMixin, Base):
     Cas confirmés de paludisme hebdomadaires par région.
     Source : DHIS2 Ministère de la Santé Madagascar, WHO GHO.
     """
-    __tablename__ = "malaria_cases"
+    __tablename__ = "malaria_observations"
     __table_args__ = (
         UniqueConstraint(
             "region_id", "annee", "semaine_epidemio",
@@ -168,12 +159,12 @@ class MalariaCase(TimestampMixin, Base):
 
     # Comptages
     cas_confirmes    = Column(Integer, default=0)
-    cas_suspects     = Column(Integer, default=0)
+    cas_confirmes_mixte     = Column(Integer, default=0)
     deces            = Column(Integer, default=0)
     hospitalisations = Column(Integer, default=0)
-    tdr_effectues    = Column(Integer, default=0)
+    tests_malaria    = Column(Integer, default=0)
     tdr_positifs     = Column(Integer, default=0)
-    milda_distribuees = Column(Integer, default=0)
+    tdr_negatifs = Column(Integer, default=0)
 
     # Taux calculés
     taux_incidence_pour_mille  = Column(Numeric(10, 4), default=0)

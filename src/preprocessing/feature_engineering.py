@@ -546,7 +546,7 @@ class FeatureEngineer:
                 text("""
                     SELECT
                         region_id, annee, semaine_epidemio, date_rapport,
-                        cas_confirmes, cas_suspects, deces, hospitalisations,
+                        cas_confirmes, cas_confirmes_mixte, deces, hospitalisations,
                         taux_incidence_pour_mille, taux_positivite_tdr_pct,
                         population_a_risque, source, fiabilite_donnees
                     FROM malaria_cases

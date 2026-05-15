@@ -891,12 +891,12 @@ def _sauvegarder_malaria_db(region_id: str, records: List[Dict]) -> None:
                     text("""
                         INSERT INTO malaria_cases
                             (region_id, annee, semaine_epidemio, date_rapport,
-                             cas_confirmes, cas_suspects, deces, hospitalisations,
+                             cas_confirmes, cas_confirmes_mixte, deces, hospitalisations,
                              taux_incidence_pour_mille, taux_positivite_tdr_pct,
                              population_a_risque, source)
                         VALUES
                             (:region_id, :annee, :semaine_epidemio, :date_rapport,
-                             :cas_confirmes, :cas_suspects, :deces, :hospitalisations,
+                             :cas_confirmes, :cas_confirmes_mixte, :deces, :hospitalisations,
                              :taux_incidence_pour_mille, :taux_positivite_tdr_pct,
                              :population_a_risque, :source)
                         ON CONFLICT (region_id, annee, semaine_epidemio)

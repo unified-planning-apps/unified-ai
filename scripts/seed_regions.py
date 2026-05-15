@@ -124,7 +124,7 @@ def upsert_regions(engine: Engine) -> int:
             ST_GeogFromText(:bbox_wkt),
             :altitude_moyenne_m, :zone_altitude, :zone_climatique,
             :population_estimee, :superficie_km2,
-            :voisins, :metadata::jsonb
+            :voisins, CAST(:metadata AS jsonb)
         )
         ON CONFLICT (code) DO UPDATE SET
             nom_fr              = EXCLUDED.nom_fr,
@@ -144,7 +144,8 @@ def upsert_regions(engine: Engine) -> int:
 
     with engine.begin() as conn:
         result = conn.execute(upsert_sql, rows)
-        codes = [r[0] for r in result.fetchall()]
+        # codes = [r[0] for r in result.fetchall()]
+        return len(rows)
 
     log.info("  ✓ {} régions upsertées", len(codes))
 
@@ -574,7 +575,7 @@ def main() -> None:
     args = parser.parse_args()
 
     engine = sa.create_engine(
-        settings.database_url,
+        settings.database.sync_url,
         pool_pre_ping=True,
     )
 

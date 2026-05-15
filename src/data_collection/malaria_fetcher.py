@@ -72,16 +72,15 @@ POPULATION_REGIONS: Dict[str, int] = {
 
 # IDs DataElements DHIS2 (à adapter selon instance Madagascar)
 DHIS2_DATA_ELEMENTS = {
-    "cas_confirmes_tdr":   "DE_MAL_CONF_TDR",   # Cas confirmés par TDR
-    "cas_confirmes_micro": "DE_MAL_CONF_MICRO",  # Cas confirmés par microscopie
-    "cas_suspects":        "DE_MAL_SUSPECT",
-    "deces":               "DE_MAL_DECES",
-    "hospitalisations":    "DE_MAL_HOSP",
-    "tdr_effectues":       "DE_MAL_TDR_TOTAL",
-    "tdr_positifs":        "DE_MAL_TDR_POS",
-    "milda_distribuees":   "DE_MILDA_DISTRIB",   # Moustiquaires distribuées
+    "cas_confirmes_pf": "jt8mzqlDEjd",
+    "cas_confirmes_pv": "ImgnHPhcNYE",
+    "cas_confirmes_mixte": "HUPFagklWaN",
+    "tests_malaria": "qdjVZojEK8S",
+    "tdr_positifs": "wZwzzRnr9N4",
+    "tdr_negatifs": "Qk9nnX0i7lZ",
+    "hospitalisations": "p4K11MFEWtw",
+    "deces": "r6nrJANOqMw"
 }
-
 # IDs indicateurs WHO GHO pour Madagascar
 WHO_GHO_INDICATORS = {
     "incidence_pour_1000":    "MALARIA_ESTIMATED_INCIDENCE",
@@ -268,18 +267,18 @@ class MalariaFetcher:
             except (ValueError, IndexError):
                 continue
 
-            cas_conf_tdr   = vals.get("cas_confirmes_tdr", 0)
-            cas_conf_micro = vals.get("cas_confirmes_micro", 0)
+            cas_conf_tdr   = vals.get("cas_confirmes_pf", 0)
+            cas_conf_micro = vals.get("cas_confirmes_pv", 0)
             cas_confirmes  = cas_conf_tdr + cas_conf_micro
-            cas_suspects   = vals.get("cas_suspects", 0)
+            cas_confirmes_mixte   = vals.get("cas_confirmes_mixte", 0)
             deces          = vals.get("deces", 0)
             hospitalisations = vals.get("hospitalisations", 0)
-            tdr_effectues  = vals.get("tdr_effectues", 0)
+            tests_malaria  = vals.get("tests_malaria", 0)
             tdr_positifs   = vals.get("tdr_positifs", 0)
 
             taux_positivite = (
-                round(tdr_positifs / tdr_effectues * 100, 2)
-                if tdr_effectues > 0 else 0.0
+                round(tdr_positifs / tests_malaria * 100, 2)
+                if tests_malaria > 0 else 0.0
             )
             taux_incidence = round(
                 cas_confirmes / population * 1000, 4
@@ -293,12 +292,12 @@ class MalariaFetcher:
                 "annee": annee,
                 "date_rapport": str(date_rapport),
                 "cas_confirmes": int(cas_confirmes),
-                "cas_suspects": int(cas_suspects),
+                "cas_confirmes_mixte": int(cas_confirmes_mixte),
                 "deces": int(deces),
                 "hospitalisations": int(hospitalisations),
                 "taux_incidence_pour_mille": taux_incidence,
                 "taux_positivite_tdr_pct": taux_positivite,
-                "tdr_effectues": int(tdr_effectues),
+                "tests_malaria": int(tests_malaria),
                 "population_a_risque": population,
                 "source": "DHIS2",
                 "fiabilite_donnees": "confirmée",
@@ -366,7 +365,7 @@ class MalariaFetcher:
             raw = await self._dhis2_analytics_query(
                 org_units=[f"{org_unit};LEVEL-3"],  # Niveau district
                 data_elements=[
-                    DHIS2_DATA_ELEMENTS["cas_confirmes_tdr"],
+                    DHIS2_DATA_ELEMENTS["cas_confirmes_pf"],
                     DHIS2_DATA_ELEMENTS["deces"],
                 ],
                 periodes=periodes,
@@ -440,7 +439,7 @@ class MalariaFetcher:
                             "annee": annee,
                             "date_rapport": str(date.fromisocalendar(annee, semaine, 1)),
                             "cas_confirmes": cas_par_semaine,
-                            "cas_suspects": int(cas_par_semaine * 1.3),
+                            "cas_confirmes_mixte": int(cas_par_semaine * 1.3),
                             "deces": 0,
                             "hospitalisations": int(cas_par_semaine * 0.05),
                             "taux_incidence_pour_mille": round(incidence / 52, 4),
@@ -824,7 +823,7 @@ class MalariaFetcher:
                 "annee": annee,
                 "date_rapport": str(dt),
                 "cas_confirmes": cas,
-                "cas_suspects": int(cas * 1.5),
+                "cas_confirmes_mixte": int(cas * 1.5),
                 "deces": max(0, int(cas * 0.005)),
                 "hospitalisations": int(cas * 0.05),
                 "taux_incidence_pour_mille": round(cas / population * 1000, 4),

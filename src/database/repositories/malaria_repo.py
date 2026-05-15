@@ -95,7 +95,7 @@ class MalariaRepository:
                     MalariaCase.semaine_epidemio,
                     MalariaCase.date_rapport,
                     func.sum(MalariaCase.cas_confirmes).label("cas_confirmes"),
-                    func.sum(MalariaCase.cas_suspects).label("cas_suspects"),
+                    func.sum(MalariaCase.cas_confirmes_mixte).label("cas_confirmes_mixte"),
                     func.sum(MalariaCase.deces).label("deces"),
                     func.sum(MalariaCase.hospitalisations).label("hospitalisations"),
                     func.avg(MalariaCase.taux_positivite_tdr_pct).label("taux_positivite_tdr_pct"),
@@ -124,7 +124,7 @@ class MalariaRepository:
                     "semaine_epidemio": row.semaine_epidemio,
                     "date_rapport":     str(row.date_rapport),
                     "cas_confirmes":    int(row.cas_confirmes or 0),
-                    "cas_suspects":     int(row.cas_suspects or 0),
+                    "cas_confirmes_mixte":     int(row.cas_confirmes_mixte or 0),
                     "deces":            int(row.deces or 0),
                     "hospitalisations": int(row.hospitalisations or 0),
                     "taux_positivite_tdr_pct": round(float(row.taux_positivite_tdr_pct or 0), 2),
@@ -512,9 +512,9 @@ class MalariaRepository:
 
             if existing:
                 for field in [
-                    "cas_confirmes", "cas_suspects", "deces", "hospitalisations",
+                    "cas_confirmes", "cas_confirmes_mixte", "deces", "hospitalisations",
                     "taux_incidence_pour_mille", "taux_positivite_tdr_pct",
-                    "tdr_effectues", "tdr_positifs", "fiabilite_donnees",
+                    "tests_malaria", "tdr_positifs", "fiabilite_donnees",
                 ]:
                     val = data.get(field)
                     if val is not None:
@@ -532,10 +532,10 @@ class MalariaRepository:
                     semaine_epidemio=data["semaine_epidemio"],
                     date_rapport=date_rapport,
                     cas_confirmes=data.get("cas_confirmes", 0),
-                    cas_suspects=data.get("cas_suspects", 0),
+                    cas_confirmes_mixte=data.get("cas_confirmes_mixte", 0),
                     deces=data.get("deces", 0),
                     hospitalisations=data.get("hospitalisations", 0),
-                    tdr_effectues=data.get("tdr_effectues", 0),
+                    tests_malaria=data.get("tests_malaria", 0),
                     tdr_positifs=data.get("tdr_positifs", 0),
                     taux_incidence_pour_mille=data.get("taux_incidence_pour_mille", 0),
                     taux_positivite_tdr_pct=data.get("taux_positivite_tdr_pct", 0),
@@ -629,7 +629,7 @@ class MalariaRepository:
             "annee":                     case.annee,
             "date_rapport":              str(case.date_rapport) if case.date_rapport else None,
             "cas_confirmes":             case.cas_confirmes or 0,
-            "cas_suspects":              case.cas_suspects or 0,
+            "cas_confirmes_mixte":              case.cas_confirmes_mixte or 0,
             "deces":                     case.deces or 0,
             "hospitalisations":          case.hospitalisations or 0,
             "taux_incidence_pour_mille": float(case.taux_incidence_pour_mille or 0),
