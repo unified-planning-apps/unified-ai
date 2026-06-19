@@ -1,7 +1,7 @@
 """
 ml/training_scripts/evaluate.py
 =================================
-Script d'évaluation standalone des modèles ML — UNICEF Madagascar.
+Script d'évaluation standalone des modèles ML —  .
 
 Fonctions exportées (utilisées par train_malaria.py, train_nutrition.py, scheduler.py) :
   evaluate_malaria_model(model, X_test, y_test, feature_names) → Dict
@@ -935,7 +935,7 @@ async def _recuperer_label_reel(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Évaluation des modèles ML — UNICEF Madagascar"
+        description="Évaluation des modèles ML"
     )
     parser.add_argument(
         "--modele",

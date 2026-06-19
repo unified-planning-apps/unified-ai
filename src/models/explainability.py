@@ -534,7 +534,7 @@ class SHAPExplainer:
         card = {
             "model_card_version": "1.0",
             "date_generation": datetime.utcnow().isoformat(),
-            "organisation": "UNICEF Madagascar",
+            "organisation": " ",
             "modele": {
                 "nom":     self._model.MODEL_NAME,
                 "version": self._model.MODEL_VERSION,

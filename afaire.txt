@@ -1,0 +1,53 @@
+- docker compose vide
+- FAILED app runing : uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ~/unicef    main *2 !1 ?1  uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload                                          ✔  3.12.11  
+
+INFO:     Will watch for changes in these directories: ['/home/natacha/unicef']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [55849] using WatchFiles
+INFO:     Started server process [55851]
+INFO:     Waiting for application startup.
+2026-06-15 17:06:09 | INFO     | src.utils.logger:155 | Logging configuré — niveau=INFO fichier=/tmp/malaria-predictor.log json=False
+2026-06-15 17:06:09 | INFO     | src.api.main:43 | Démarrage Malaria-Nutrition Predictor vv1
+2026-06-15 17:06:09 | ERROR    | src.api.main:52 | Échec connexion PostgreSQL : Not an executable object: 'SELECT 1'
+ERROR:    Traceback (most recent call last):
+  File "/home/natacha/unicef/venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1414, in execute
+    meth = statement._execute_on_connection
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute '_execute_on_connection'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/natacha/unicef/venv/lib/python3.11/site-packages/starlette/routing.py", line 732, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/usr/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/natacha/unicef/src/api/main.py", line 49, in lifespan
+    await conn.execute("SELECT 1")
+  File "/home/natacha/unicef/venv/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 657, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/natacha/unicef/venv/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 190, in greenlet_spawn
+    result = context.switch(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/natacha/unicef/venv/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1416, in execute
+    raise exc.ObjectNotExecutableError(statement) from err
+sqlalchemy.exc.ObjectNotExecutableError: Not an executable object: 'SELECT 1'
+
+ERROR:    Application startup failed. Exiting.
+
+- SERVICE NOT FOUND : # SANS Docker — démarrez-les manuellement
+sudo service postgresql start
+sudo service redis-server start
+- comment voir les tables existant dans postgresql 
+- c'est quoi celery : 
+# Terminal 2 — Worker Celery (collecte de données automatique)
+celery -A src.data_collection.scheduler.celery_app worker \
+    --loglevel=info \
+    --queues=high,default,low
+
+# Terminal 3 — Celery Beat (planificateur)
+celery -A src.data_collection.scheduler.celery_app beat \
+    --loglevel=info

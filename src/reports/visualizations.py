@@ -1,5 +1,5 @@
 """
-Génération de visualisations pour les rapports UNICEF Madagascar.
+Génération de visualisations pour les rapports  .
 
 Couvre :
   - Cartes choroplèthes (Folium → PNG statique via Selenium ou export direct)
@@ -160,7 +160,7 @@ class Visualizer:
         <div style="position:fixed;top:10px;left:50px;z-index:1000;
                     background:white;padding:10px;border-radius:5px;
                     border:2px solid {UNICEF_BLUE};font-family:Arial;">
-            <b style="color:{UNICEF_BLUE}">UNICEF Madagascar</b><br>
+            <b style="color:{UNICEF_BLUE}"> </b><br>
             Carte de risque — {type_carte.upper()}<br>
             <small>{datetime.utcnow().strftime('%d/%m/%Y')}</small>
         </div>"""
@@ -304,7 +304,7 @@ class Visualizer:
         }.get(type_carte, "Carte de Risque")
 
         ax.set_title(
-            f"UNICEF Madagascar\n{titre}\n{date.today().strftime('%d/%m/%Y')}",
+            f" \n{titre}\n{date.today().strftime('%d/%m/%Y')}",
             fontsize=11, fontweight="bold", color=UNICEF_DARK,
             pad=12
         )
@@ -312,7 +312,7 @@ class Visualizer:
         # Logo UNICEF simulé (barre bleue en haut)
         ax.axhline(y=0.985, color=UNICEF_BLUE, linewidth=6, zorder=6)
         ax.text(
-            0.5, 0.992, "UNICEF Madagascar",
+            0.5, 0.992, " ",
             ha="center", va="center",
             fontsize=10, fontweight="bold", color="white", zorder=7,
         )
@@ -803,7 +803,7 @@ class Visualizer:
                 <span style="color:#F57C00">■</span> Élevé (0.5-0.75)<br>
                 <span style="color:#D32F2F">■</span> Très élevé (> 0.75)<br>
                 <hr style="margin:4px 0">
-                <small>UNICEF Madagascar | {type_carte}</small>
+                <small>  | {type_carte}</small>
             </div>"""
             m.get_root().html.add_child(folium.Element(legend))
         except Exception:
@@ -854,7 +854,7 @@ class Visualizer:
         )
         ax.set_facecolor("#F5F5F5")
         ax.axis("off")
-        ax.set_title("UNICEF Madagascar", fontsize=10, color=UNICEF_BLUE)
+        ax.set_title(" ", fontsize=10, color=UNICEF_BLUE)
         plt.tight_layout()
         plt.savefig(str(output_path), dpi=100, bbox_inches="tight")
         plt.close(fig)

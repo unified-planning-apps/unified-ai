@@ -448,7 +448,7 @@ class MLPrediction(TimestampMixin, Base):
 # ─────────────────────────────────────────────────────────────────
 
 class User(TimestampMixin, Base):
-    """Utilisateurs de l'API UNICEF Madagascar."""
+    """Utilisateurs de l'API  ."""
     __tablename__ = "users"
 
     id           = Column(Integer, primary_key=True, autoincrement=True)

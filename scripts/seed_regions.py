@@ -24,7 +24,7 @@ Prérequis :
     - init_db.py exécuté au préalable
     - Extension PostGIS active
 
-Auteur : Équipe Data UNICEF Madagascar
+Auteur : Équipe Data  
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ def upsert_regions(engine: Engine) -> int:
 # ─────────────────────────────────────────────────────────────────
 
 # Catalogue de recettes de référence adaptées à Madagascar
-# Sources : UNICEF Madagascar, FAO, Institut Pasteur Madagascar
+# Sources :  , FAO, Institut Pasteur Madagascar
 RECETTES_SEED: List[Dict[str, Any]] = [
     {
         "nom_fr": "Bouillie de maïs enrichie au moringa",
@@ -195,7 +195,7 @@ RECETTES_SEED: List[Dict[str, Any]] = [
         "allergenes": ["lait"],
         "temps_prep_min": 20,
         "difficulte": "facile",
-        "source": "UNICEF Madagascar / Nutri-Action Guide 2023",
+        "source": "  / Nutri-Action Guide 2023",
     },
     {
         "nom_fr": "Vary amin'anana (riz aux légumes verts)",

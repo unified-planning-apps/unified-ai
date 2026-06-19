@@ -1,10 +1,3 @@
-"""
-src/api/main.py
-================
-Point d'entrée principal de l'application FastAPI.
-Configure : lifespan, CORS, middleware, routers, gestion d'erreurs globale.
-"""
-
 from __future__ import annotations
 
 import time
@@ -19,6 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from loguru import logger
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import text
 
 from config.settings import settings
 from src.api.middleware.auth import AuthMiddleware
@@ -46,7 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 1. Vérification connexion PostgreSQL
     try:
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         logger.info("PostgreSQL connecté")
     except Exception as exc:
         logger.error("Échec connexion PostgreSQL : {}", exc)
@@ -98,7 +92,7 @@ def create_application() -> FastAPI:
         title=settings.app_name,
         description=(
             "API de prédiction du risque paludisme et malnutrition pour Madagascar. "
-            "Développée pour UNICEF Madagascar — pipeline temps réel, "
+            "Développée pour   — pipeline temps réel, "
             "22 régions, modèles ML explicables."
         ),
         version=settings.api_version,
@@ -108,12 +102,12 @@ def create_application() -> FastAPI:
         default_response_class=ORJSONResponse,
         lifespan=lifespan,
         contact={
-            "name": "UNICEF Madagascar — Tech Team",
+            "name": "  — ",
             "email": "tech@unicef-madagascar.org",
         },
         license_info={
-            "name": "Propriétaire UNICEF",
-            "url": "https://www.unicef.org",
+            "name": "Propriétaire Deep Innovation",
+            "url": "https://www.deepinnovation.vercel.app",
         },
     )
 
@@ -275,7 +269,7 @@ def create_application() -> FastAPI:
         # DB
         try:
             async with engine.begin() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             checks["postgresql"] = "ok"
         except Exception:
             checks["postgresql"] = "ko"
@@ -313,7 +307,7 @@ def create_application() -> FastAPI:
             "version": settings.api_version,
             "documentation": "/docs",
             "health": "/health",
-            "description": "API UNICEF Madagascar — Prédiction Paludisme & Malnutrition",
+            "description": "API   — Prédiction Paludisme & Malnutrition",
         }
 
     return app

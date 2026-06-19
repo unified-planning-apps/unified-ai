@@ -25,7 +25,7 @@ Prérequis :
     - Variable d'environnement DATABASE_URL configurée (ou fichier .env)
     - Permissions CREATE sur la base cible
 
-Auteur : Équipe Data UNICEF Madagascar
+Auteur : Équipe Data  
 """
 
 from __future__ import annotations
@@ -756,7 +756,7 @@ def verify_integrity(engine: Engine) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Initialise la base de données PostgreSQL du projet UNICEF Madagascar"
+        description="Initialise la base de données PostgreSQL du projet  "
     )
     parser.add_argument(
         "--drop-all",

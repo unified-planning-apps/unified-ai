@@ -1,5 +1,5 @@
 """
-Package de génération de rapports UNICEF Madagascar."""
+Package de génération de rapports  ."""
 
 from src.reports.generator import ReportGenerator
 from src.reports.recipe_selector import RecipeSelector

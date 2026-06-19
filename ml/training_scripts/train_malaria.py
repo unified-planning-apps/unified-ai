@@ -541,7 +541,7 @@ def _generate_version() -> str:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Entraînement MalariaPredictor XGBoost — UNICEF Madagascar"
+        description="Entraînement MalariaPredictor XGBoost"
     )
     parser.add_argument(
         "--date-debut",

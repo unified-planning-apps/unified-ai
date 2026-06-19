@@ -39,7 +39,7 @@ Architecture :
 Prérequis :
     pip install httpx tqdm tenacity pandas
 
-Auteur : Équipe Data UNICEF Madagascar
+Auteur : Équipe Data
 """
 
 from __future__ import annotations

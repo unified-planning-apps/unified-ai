@@ -1,5 +1,5 @@
 """
-Déploiement automatisé de la plateforme UNICEF Madagascar.
+Déploiement automatisé de la plateforme.
 
 Ce script orchestre le cycle complet de déploiement applicatif :
   1. Validation de l'environnement (.env, variables critiques)
@@ -27,7 +27,7 @@ Usage :
     python scripts/deploy.py --rollback-on-failure
     python scripts/deploy.py --dry-run
 
-Auteur : Équipe Data UNICEF Madagascar
+Auteur : Équipe Data
 """
 
 from __future__ import annotations
@@ -500,7 +500,7 @@ def release_lock() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Déploiement plateforme UNICEF Madagascar"
+        description="Déploiement plateforme  "
     )
 
     parser.add_argument(

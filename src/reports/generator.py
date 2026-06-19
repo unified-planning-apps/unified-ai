@@ -1,5 +1,5 @@
 """
-Orchestrateur de génération de rapports UNICEF Madagascar.
+Orchestrateur de génération de rapports  .
 
 Interface publique (contrat avec reports.py router et scheduler.py) :
 
@@ -392,7 +392,7 @@ class ReportGenerator:
             "date_fin":       date_fin,
             "date_generation":datetime.utcnow(),
             "semaine":        f"S{date_fin.isocalendar()[1]:02d}-{date_fin.year}",
-            "organisation":   "UNICEF Madagascar",
+            "organisation":   " ",
             "logo_url":       "/static/unicef_logo.png",
             "est_national":   region_id is None,
             "seuils_oms": {
@@ -460,7 +460,7 @@ class ReportGenerator:
         story  = []
 
         # Titre
-        story.append(Paragraph("UNICEF Madagascar — Rapport Épidémiologique", styles["Title"]))
+        story.append(Paragraph("  — Rapport Épidémiologique", styles["Title"]))
         story.append(Spacer(1, 0.5 * cm))
 
         # Contenu par paragraphes
@@ -505,7 +505,7 @@ class ReportGenerator:
 <html lang="fr">
 <head><meta charset="utf-8"><title>Rapport UNICEF {context.get('rapport_id','')}</title></head>
 <body>
-<h1>UNICEF Madagascar — Rapport Épidémiologique</h1>
+<h1>  — Rapport Épidémiologique</h1>
 <p>Région : {context.get('region_name', 'Nationale')}</p>
 <p>Période : {context.get('date_debut')} — {context.get('date_fin')}</p>
 <p>Généré le : {context.get('date_generation', datetime.utcnow())}</p>

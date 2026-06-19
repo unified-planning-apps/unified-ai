@@ -1,7 +1,7 @@
 """
-Malaria & Nutrition Predictor — UNICEF Madagascar
+Malaria & Nutrition Predictor —  
 Package principal src/
 """
 
 __version__ = "1.0.0"
-__author__ = "UNICEF Madagascar Tech Team"
+__author__ = "  Deep Innovation"
