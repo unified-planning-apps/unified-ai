@@ -57,30 +57,29 @@ class TimestampMixin:
 # Météo
 # ─────────────────────────────────────────────────────────────────
 
-class WeatherObservation(Base):
+class WeatherObservation(TimestampMixin, Base):
     __tablename__ = "weather_observations"
+    __table_args__ = (
+        Index("ix_weather_region_date", "region_id", "horodatage"),
+    )
 
-    id = Column(BigInteger, primary_key=True)
-
-    region_code = Column(String(20), nullable=False)
-    timestamp_utc = Column(DateTime(timezone=True), nullable=False)
-
-    temp_min_c = Column(Float)
-    temp_max_c = Column(Float)
-    temperature_c = Column(Float)
-
-    humidite_pct = Column(Float)
-    precipitation_mm = Column(Float)
-
-    vitesse_vent_kmh = Column(Float)
-
-    ndvi = Column(Float)
-    altitude_m = Column(Float)
-
-    source_api = Column(String(50))
-    raw_payload = Column(JSONB)
-    qualite_flag = Column(SmallInteger, nullable=False, default=0)
-
+    id                    = Column(BigInteger, primary_key=True, autoincrement=True)
+    region_id             = Column(String(20), nullable=False)   # ← aligné fetcher
+    horodatage            = Column(DateTime(timezone=True), nullable=False)  # ← aligné
+    temperature_c         = Column(Float)
+    temperature_min_c     = Column(Float)
+    temperature_max_c     = Column(Float)
+    humidite_pct          = Column(Float)
+    precipitations_mm     = Column(Float, default=0.0)   # ← aligné fetcher
+    vent_kmh              = Column(Float)
+    pression_hpa          = Column(Float)
+    couverture_nuageuse_pct = Column(Float)
+    rayonnement_solaire_mj  = Column(Float)
+    humidite_sol_fraction   = Column(Float)
+    indice_uv             = Column(Float)
+    description           = Column(String(200))
+    source                = Column(String(50), default="OpenWeatherMap")
+    raw_json              = Column(JSONB)
 
 class GeoNDVI(TimestampMixin, Base):
     """Indice NDVI satellite par région (Sentinel-2)."""

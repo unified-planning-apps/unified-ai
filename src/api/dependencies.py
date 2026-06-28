@@ -124,7 +124,8 @@ async def get_current_user(
             settings.jwt.secret_key,
             algorithms=[settings.jwt.algorithm],
         )
-        user_id: int = payload.get("sub")
+        user_id_str = payload.get("sub")
+        user_id = int(user_id_str)        
         username: str = payload.get("username")
         email: str = payload.get("email")
         role_str: str = payload.get("role", "viewer")

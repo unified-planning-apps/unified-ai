@@ -1,6 +1,4 @@
 """
-src/api/routers/auth.py
-========================
 Endpoints d'authentification et gestion des utilisateurs.
 
 Routes :
@@ -26,7 +24,7 @@ from schema.auth import (
 from services.auth_service import AuthService
 from src.api.dependencies import AuthUser, DbSession
 
-router = APIRouter(tags=["🔐 Authentification"])
+router = APIRouter(tags=["Authentification"])
 
 
 # ─────────────────────────────────────────────
@@ -45,7 +43,7 @@ Connectez-vous avec vos identifiants pour obtenir un token Bearer JWT.
 - `demo` / `demo123`  → lecture seule
 
 **Utilisation du token :**
-Cliquez sur **Authorize 🔒** en haut de la page Swagger et collez votre `access_token`.
+Cliquez sur **Authorize ** en haut de la page Swagger et collez votre `access_token`.
     """,
 )
 async def login(data: LoginRequest, db: DbSession) -> TokenResponse:
@@ -90,14 +88,17 @@ async def register(data: RegisterRequest, db: DbSession) -> UserResponse:
     try:
         service = AuthService(db)
         return await service.register(data)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code":    "UTILISATEUR_EXISTE",
-                "message": str(exc),
-            },
-        )
+    except Exception as exc:
+        logger.exception(exc)
+        raise
+    # except ValueError as exc:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_409_CONFLICT,
+    #         detail={
+    #             "code":    "UTILISATEUR_EXISTE",
+    #             "message": str(exc),
+    #         },
+    #     )
 
 
 # ─────────────────────────────────────────────

@@ -47,10 +47,15 @@ class WeatherRepository:
           - src/preprocessing/feature_engineering.py (_fetch_weather_from_db)
         """
         try:
+            if isinstance(date_debut, str):
+                date_debut = date.fromisoformat(date_debut)
+
+            if isinstance(date_fin, str):
+                date_fin = date.fromisoformat(date_fin)
+
             stmt = (
                 select(
-                    func.date_trunc("day", WeatherObservation.horodatage)
-                        .cast(date).label("date"),
+                    func.date_trunc("day", WeatherObservation.created_at).label("date"),
                     func.avg(WeatherObservation.temperature_c).label("temperature_moy_c"),
                     func.min(WeatherObservation.temperature_c).label("temperature_min_c"),
                     func.max(WeatherObservation.temperature_c).label("temperature_max_c"),
@@ -68,11 +73,11 @@ class WeatherRepository:
                 .where(
                     and_(
                         WeatherObservation.region_id == region_id,
-                        WeatherObservation.horodatage >= datetime.combine(date_debut, datetime.min.time()),
-                        WeatherObservation.horodatage <= datetime.combine(date_fin, datetime.max.time()),
+                        WeatherObservation.created_at >= datetime.combine(date_debut, datetime.min.time()),
+                        WeatherObservation.created_at <= datetime.combine(date_fin, datetime.max.time()),
                     )
                 )
-                .group_by(func.date_trunc("day", WeatherObservation.horodatage))
+                .group_by(func.date_trunc("day", WeatherObservation.created_at))
                 .order_by("date")
                 .limit(limit)
                 .offset(offset)
@@ -97,8 +102,8 @@ class WeatherRepository:
             return records
 
         except Exception as exc:
-            logger.error("WeatherRepo.get_history {} : {}", region_id, exc)
-            return []
+            logger.exception("WeatherRepo.get_history {} failed", region_id)
+            raise
 
     async def get_latest(self, region_id: str) -> Optional[Dict[str, Any]]:
         """Retourne la dernière observation météo disponible pour une région."""
