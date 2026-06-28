@@ -11,15 +11,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from loguru import logger
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from src.api.routers import auth
+from services.auth_service import create_default_admin
 
 from config.settings import settings
 from src.api.middleware.auth import AuthMiddleware
 from src.api.middleware.rate_limiting import RateLimitMiddleware
 from src.api.routers import malaria, nutrition, predictions, reports, weather
-from src.database import engine, get_redis_pool
+from src.database import engine, get_redis_pool, AsyncSessionLocal
 from src.utils.logger import setup_logging
+
+
 
 # ---------------------------------------------------------------------------
 # Lifespan — startup / shutdown
@@ -54,6 +58,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.error("Échec connexion Redis : {}", exc)
         raise
+    # creation compte
+    try:
+        async with AsyncSessionLocal() as session:
+            await create_default_admin(session)
+            await session.commit()
+    except Exception as exc:
+        logger.warning("Création admin échouée : {}", exc)
 
     # 3. Pré-chargement modèles ML (lazy via ModelRegistry)
     try:
@@ -224,6 +235,11 @@ def create_application() -> FastAPI:
         prefix=f"{API_PREFIX}/meteo",
         tags=["Météorologie"],
     )
+    app.include_router(
+        auth.router,
+        prefix=f"{API_PREFIX}/auth",
+        tags=["Authentification"],
+    ),
     app.include_router(
         malaria.router,
         prefix=f"{API_PREFIX}/paludisme",

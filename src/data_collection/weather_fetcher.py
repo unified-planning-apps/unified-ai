@@ -276,68 +276,65 @@ class WeatherFetcher:
         }
 
     async def _owm_forecast(self, lat: float, lon: float) -> Dict:
+        """
+        Utilise One Call API 3.0 (remplace 2.5 fermée en juin 2024).
+        Retourne current + hourly 48h + daily 8j en un seul appel.
+        1000 appels/jour gratuits — suffisant pour 22 régions × 2/jour.
+        """
         session = await self._get_session()
-        # OWM forecast gratuit : toutes les 3h sur 5j (40 points)
-        url = f"{self.OWM_BASE}/forecast"
+        url = "https://api.openweathermap.org/data/3.0/onecall"
         params = {
-            "lat": lat,
-            "lon": lon,
-            "appid": self._api_key,
-            "units": "metric",
-            "lang": "fr",
-            "cnt": 40,
+            "lat":     lat,
+            "lon":     lon,
+            "appid":   self._api_key,
+            "units":   "metric",
+            "lang":    "fr",
+            "exclude": "minutely,alerts",  # on garde current, hourly, daily
         }
         async with session.get(url, params=params) as resp:
+            if resp.status == 401:
+                raise WeatherAPIError(
+                    "Clé API OWM invalide OU One Call 3.0 non souscrit. "
+                    "Allez sur openweathermap.org → Billing → One Call by Call"
+                )
+            if resp.status == 429:
+                raise WeatherAPIError("Rate limit OWM dépassé (max 60/min).")
             resp.raise_for_status()
             return await resp.json()
 
     def _parse_owm_forecast(self, raw: Dict, days: int) -> List[Dict]:
-        """Agrège les prévisions 3h en prévisions journalières."""
-        from collections import defaultdict
-
-        daily: Dict[str, Dict] = defaultdict(lambda: {
-            "temps": [],
-            "pluie": 0.0,
-            "vent_max": 0.0,
-            "humidite": [],
-            "nuages": [],
-            "description": "",
-        })
-
-        for item in raw.get("list", []):
-            dt = datetime.utcfromtimestamp(item["dt"])
-            day_key = dt.strftime("%Y-%m-%d")
-            d = daily[day_key]
-
-            main = item.get("main", {})
-            d["temps"].extend([main.get("temp_min", 0), main.get("temp_max", 0)])
-            d["pluie"] += item.get("rain", {}).get("3h", 0.0)
-            d["vent_max"] = max(d["vent_max"], item.get("wind", {}).get("speed", 0) * 3.6)
-            d["humidite"].append(main.get("humidity", 0))
-            d["nuages"].append(item.get("clouds", {}).get("all", 0))
-            if not d["description"]:
-                weather = item.get("weather", [{}])[0]
-                d["description"] = weather.get("description", "")
-            d["pop"] = max(d.get("pop", 0), item.get("pop", 0))  # prob of precipitation
-
+        """
+        Parse la réponse One Call 3.0.
+        Structure : raw['daily'] = liste de 8 jours.
+        """
+        daily_list = raw.get("daily", [])
         result = []
-        for day_str, d in sorted(daily.items())[:days]:
-            temps = d["temps"]
+
+        for day_data in daily_list[:days]:
+            dt = datetime.utcfromtimestamp(day_data["dt"])
+            temp = day_data.get("temp", {})
+            weather = day_data.get("weather", [{}])[0]
+            rain = day_data.get("rain", 0.0)   # mm/jour (absent si pas de pluie)
+            snow = day_data.get("snow", 0.0)
+
             result.append({
-                "date": day_str,
-                "temperature_min_c": round(min(temps), 1) if temps else 0.0,
-                "temperature_max_c": round(max(temps), 1) if temps else 0.0,
-                "precipitations_mm": round(d["pluie"], 1),
-                "precipitations_prob_pct": round(d.get("pop", 0) * 100, 0),
-                "humidite_moy_pct": round(
-                    sum(d["humidite"]) / len(d["humidite"]), 0
-                ) if d["humidite"] else 0.0,
-                "vent_max_kmh": round(d["vent_max"], 1),
-                "couverture_nuageuse_pct": round(
-                    sum(d["nuages"]) / len(d["nuages"]), 0
-                ) if d["nuages"] else 0.0,
-                "description": d["description"],
-                "risque_cyclone": False,  # calculé après
+                "date":                    str(dt.date()),
+                "temperature_min_c":       round(temp.get("min", 0), 1),
+                "temperature_max_c":       round(temp.get("max", 0), 1),
+                "temperature_moy_c":       round(temp.get("day", 0), 1),
+                "temperature_ressentie_c": round(day_data.get("feels_like", {}).get("day", 0), 1),
+                "precipitations_mm":       round(float(rain) + float(snow), 1),
+                "precipitations_prob_pct": round(day_data.get("pop", 0) * 100, 0),
+                "humidite_moy_pct":        day_data.get("humidity", 0),
+                "vent_max_kmh":            round(day_data.get("wind_speed", 0) * 3.6, 1),
+                "couverture_nuageuse_pct": day_data.get("clouds", 0),
+                "indice_uv":               day_data.get("uvi", None),
+                "description":             weather.get("description", ""),
+                "icone":                   weather.get("icon", ""),
+                "sunrise":  datetime.utcfromtimestamp(day_data.get("sunrise", 0)).strftime("%H:%M"),
+                "sunset":   datetime.utcfromtimestamp(day_data.get("sunset", 0)).strftime("%H:%M"),
+                "risque_cyclone": False,
+                "source": "OpenWeatherMap One Call 3.0",
             })
 
         return result
