@@ -122,72 +122,24 @@ class WeatherForecaster:
             logger.warning("LSTM predict échoué : {} — fallback Prophet", exc)
             return self._predict_prophet(historical_data, horizon)
 
-    def detect_anomalies(
-        self,
-        historical_data: List[Dict[str, Any]],
-        zscore_threshold: float = 2.5,
-    ) -> List[Dict[str, Any]]:
-        """
-        Détecte les anomalies climatiques dans une série historique.
-        Méthode : Z-score sur fenêtre glissante 30 jours.
+    def detect_anomalies(row):
+        anomalies = {}
 
-        Returns:
-            Liste d'anomalies détectées avec sévérité et impact estimé.
-        """
-        if len(historical_data) < 14:
-            return []
+        if row["temperature_moy_c"] is not None:
+            if row["temperature_moy_c"] > 35:
+                anomalies["temp"] = "heatwave"
+            elif row["temperature_moy_c"] < 10:
+                anomalies["temp"] = "cold"
 
-        anomalies = []
+        if row["precipitations_mm"] is not None:
+            if row["precipitations_mm"] > 50:
+                anomalies["rain"] = "heavy_rain"
 
-        for var in ["temperature_moy_c", "precipitations_mm"]:
-            values = np.array([
-                float(d.get(var, 0)) for d in historical_data
-            ])
+        if row["vent_kmh"] is not None:
+            if row["vent_kmh"] > 40:
+                anomalies["wind"] = "strong_wind"
 
-            # Z-score glissant sur 30j
-            for i in range(len(values)):
-                window_start = max(0, i - 30)
-                window = values[window_start:i + 1]
-                if len(window) < 7:
-                    continue
-
-                mean = np.mean(window)
-                std  = np.std(window) + 1e-9
-                z    = (values[i] - mean) / std
-
-                if abs(z) > zscore_threshold:
-                    record = historical_data[i]
-                    date_str = record.get("date", str(date.today()))
-
-                    # Classification de l'anomalie
-                    type_anomalie, impact = self._classifier_anomalie(var, z, values[i])
-
-                    anomalies.append({
-                        "date": date_str,
-                        "variable": var,
-                        "valeur_observee": round(float(values[i]), 2),
-                        "valeur_normale": round(float(mean), 2),
-                        "z_score": round(float(z), 2),
-                        "type_anomalie": type_anomalie,
-                        "severite": "extreme" if abs(z) > 4 else "severe" if abs(z) > 3 else "moderate",
-                        "impact_paludisme": impact["paludisme"],
-                        "impact_nutrition": impact["nutrition"],
-                    })
-
-        # Tri par date et déduplication
-        seen = set()
-        result = []
-        for a in sorted(anomalies, key=lambda x: x["date"]):
-            key = f"{a['date']}_{a['type_anomalie']}"
-            if key not in seen:
-                seen.add(key)
-                result.append(a)
-
-        logger.debug(
-            "Anomalies détectées : {} sur {} jours de données",
-            len(result), len(historical_data)
-        )
-        return result
+        return anomalies or None
 
     def get_health_info(self) -> Dict[str, Any]:
         """Compatible avec le endpoint /sante-modeles."""

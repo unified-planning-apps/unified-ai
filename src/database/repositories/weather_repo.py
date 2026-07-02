@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import and_, desc, func, select, text
+from sqlalchemy import Date, and_, desc, func, select, text, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import WeatherObservation, GeoNDVI
@@ -53,9 +53,14 @@ class WeatherRepository:
             if isinstance(date_fin, str):
                 date_fin = date.fromisoformat(date_fin)
 
+            day = cast(
+                    func.date_trunc("day", WeatherObservation.horodatage),
+                    Date
+                ).label("date")
+
             stmt = (
                 select(
-                    func.date_trunc("day", WeatherObservation.created_at).label("date"),
+                    day,
                     func.avg(WeatherObservation.temperature_c).label("temperature_moy_c"),
                     func.min(WeatherObservation.temperature_c).label("temperature_min_c"),
                     func.max(WeatherObservation.temperature_c).label("temperature_max_c"),
@@ -63,22 +68,17 @@ class WeatherRepository:
                     func.avg(WeatherObservation.humidite_pct).label("humidite_moy_pct"),
                     func.avg(WeatherObservation.vent_kmh).label("vent_kmh"),
                     func.avg(WeatherObservation.pression_hpa).label("pression_hpa"),
-                    func.avg(WeatherObservation.couverture_nuageuse_pct)
-                        .label("couverture_nuageuse_pct"),
-                    func.avg(WeatherObservation.rayonnement_solaire_mj)
-                        .label("rayonnement_solaire_mj"),
-                    func.avg(WeatherObservation.humidite_sol_fraction)
-                        .label("humidite_sol_fraction"),
+                    func.avg(WeatherObservation.couverture_nuageuse_pct).label("couverture_nuageuse_pct"),
+                    func.avg(WeatherObservation.rayonnement_solaire_mj).label("rayonnement_solaire_mj"),
+                    func.avg(WeatherObservation.humidite_sol_fraction).label("humidite_sol_fraction"),
                 )
                 .where(
-                    and_(
-                        WeatherObservation.region_id == region_id,
-                        WeatherObservation.created_at >= datetime.combine(date_debut, datetime.min.time()),
-                        WeatherObservation.created_at <= datetime.combine(date_fin, datetime.max.time()),
-                    )
+                    WeatherObservation.region_id == region_id,
+                    WeatherObservation.horodatage >= datetime.combine(date_debut, datetime.min.time()),
+                    WeatherObservation.horodatage <= datetime.combine(date_fin, datetime.max.time()),
                 )
-                .group_by(func.date_trunc("day", WeatherObservation.created_at))
-                .order_by("date")
+                .group_by(day)
+                .order_by(day)
                 .limit(limit)
                 .offset(offset)
             )

@@ -57,7 +57,7 @@ class TimestampMixin:
 # Météo
 # ─────────────────────────────────────────────────────────────────
 
-class WeatherObservation(TimestampMixin, Base):
+class WeatherObservation(Base):
     __tablename__ = "weather_observations"
     __table_args__ = (
         Index("ix_weather_region_date", "region_id", "horodatage"),
@@ -70,7 +70,7 @@ class WeatherObservation(TimestampMixin, Base):
     temperature_min_c     = Column(Float)
     temperature_max_c     = Column(Float)
     humidite_pct          = Column(Float)
-    precipitations_mm     = Column(Float, default=0.0)   # ← aligné fetcher
+    precipitations_mm     = Column(Float, default=0.0)  
     vent_kmh              = Column(Float)
     pression_hpa          = Column(Float)
     couverture_nuageuse_pct = Column(Float)
@@ -142,32 +142,44 @@ class MalariaCase(TimestampMixin, Base):
     __tablename__ = "malaria_observations"
     __table_args__ = (
         UniqueConstraint(
-            "region_id", "annee", "semaine_epidemio",
-            name="uq_malaria_region_week"
+            "region_code",
+            "annee",
+            "semaine_iso",
+            name="uq_malaria_region_week",
         ),
-        Index("ix_malaria_region_date", "region_id", "date_rapport"),
-        Index("ix_malaria_semaine", "annee", "semaine_epidemio"),
+
+        Index(
+            "ix_malaria_region_date",
+            "region_code",
+            "date_debut_semaine",
+        ),
+
+        Index(
+            "ix_malaria_semaine",
+            "annee",
+            "semaine_iso",
+        ),
     )
 
     id               = Column(BigInteger, primary_key=True, autoincrement=True)
-    region_id        = Column(String(20), nullable=False)
+    region_id = Column("region_code", String(20), nullable=False)
     district         = Column(String(100))
     annee            = Column(SmallInteger, nullable=False)
-    semaine_epidemio = Column(SmallInteger, nullable=False)
-    date_rapport     = Column(Date, nullable=False)
+    semaine_epidemio = Column("semaine_iso", SmallInteger, nullable=False)
+    date_rapport = Column("date_debut_semaine", Date, nullable=False)
 
     # Comptages
     cas_confirmes    = Column(Integer, default=0)
     cas_confirmes_mixte     = Column(Integer, default=0)
     deces            = Column(Integer, default=0)
     hospitalisations = Column(Integer, default=0)
-    tests_malaria    = Column(Integer, default=0)
+    tests_malaria = Column("tests_realises", Integer)
     tdr_positifs     = Column(Integer, default=0)
     tdr_negatifs = Column(Integer, default=0)
 
     # Taux calculés
     taux_incidence_pour_mille  = Column(Numeric(10, 4), default=0)
-    taux_positivite_tdr_pct    = Column(Numeric(5, 2), default=0)
+    taux_positivite_tdr_pct = Column("taux_positivite", Numeric(5,2))
     taux_letalite_pct          = Column(Numeric(5, 3), default=0)
 
     # Contexte

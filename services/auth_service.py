@@ -1,6 +1,4 @@
 """
-services/auth_service.py
-==========================
 Logique métier pour l'authentification et la gestion des utilisateurs.
 
 Inclut la création automatique du compte admin par défaut au premier démarrage.
@@ -56,7 +54,7 @@ class AuthService:
             region_id=user.region_id,
         )
 
-        logger.info("✅ Login réussi — utilisateur={} rôle={}", user.username, user.role)
+        logger.info("Login réussi — utilisateur={} rôle={}", user.username, user.role)
 
         return TokenResponse(
             access_token=token,
@@ -112,7 +110,7 @@ class AuthService:
         self._db.add(user)
         await self._db.flush()
 
-        logger.info("✅ Nouvel utilisateur créé — {} ({})", user.username, user.role)
+        logger.info("Nouvel utilisateur créé — {} ({})", user.username, user.role)
 
         return UserResponse(
             user_id=user.id,
@@ -231,8 +229,8 @@ async def create_default_admin(db: AsyncSession) -> None:
     db.add(viewer)
 
     await db.flush()
-    logger.info("✅ Comptes par défaut créés — admin/admin123 et demo/demo123")
+    logger.info("Comptes par défaut créés — admin/admin123 et demo/demo123")
     logger.warning(
-        "⚠️  CHANGEZ le mot de passe admin en production ! "
+        "CHANGEZ le mot de passe admin en production ! "
         "POST /api/v1/auth/change-password"
     )
