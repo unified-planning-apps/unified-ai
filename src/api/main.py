@@ -218,11 +218,7 @@ def create_application() -> FastAPI:
         logger.exception("Erreur non gérée sur {} : {}", request.url.path, exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "statut": "erreur",
-                "code": "INTERNAL_ERROR",
-                "message": "Une erreur interne est survenue. L'équipe technique a été notifiée.",
-            },
+            content={"detail": str(exc)}
         )
 
     # ------------------------------------------------------------------

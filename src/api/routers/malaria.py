@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
+from unittest import result
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Query, status
 from loguru import logger
@@ -483,10 +484,6 @@ async def get_stats_saisonnieres(
     "/facteurs-risque/{region_id}",
     response_model=FacteursRisque,
     summary="Facteurs de risque détaillés d'une région",
-    description=(
-        "Retourne tous les facteurs de risque actuels pour une région : "
-        "climatiques, épidémiologiques, environnementaux."
-    ),
 )
 async def get_facteurs_risque(
     region_id: str = Path(..., example="MDG-VAT"),
@@ -494,18 +491,93 @@ async def get_facteurs_risque(
     db: DbSession = None,
     cache: Cache = None,
 ):
-    cache_key = f"malaria:facteurs:{region_id}:{date.today()}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return json.loads(cached)
+    try:
+        # ─────────────────────────────
+        # 1. CACHE (versionné proprement)
+        # ─────────────────────────────
+        cache_key = f"malaria:facteurs:v1:{region_id}:{date.today()}"
 
-    from src.preprocessing.feature_engineering import FeatureEngineer
-    engineer = FeatureEngineer(db)
-    features = await engineer.build_malaria_features(region_id)
+        cached = await cache.get(cache_key)
+        if cached:
+            logger.info(f"[CACHE HIT] facteurs-risque {region_id}")
+            return json.loads(cached)
 
-    await cache.set(cache_key, json.dumps(features, default=str), ttl=3600)
-    return features
+        # ─────────────────────────────
+        # 2. FEATURE ENGINEERING
+        # ─────────────────────────────
+        from src.preprocessing.feature_engineering import FeatureEngineer
+        from src.utils.constants import get_saison_courante
 
+        engineer = FeatureEngineer(db)
+        features = await engineer.build_malaria_features(region_id)
+
+        # ─────────────────────────────
+        # 3. DERIVED FEATURES
+        # ─────────────────────────────
+        mois = date.today().month
+        saison_obj = get_saison_courante(mois)
+
+        # endemicité
+        enc_map = {0: "low", 1: "medium", 2: "high", 3: "very_high"}
+        endemicite_encoded = int(features.get("endemicite_encoded", 1))
+        endemicite_str = enc_map.get(endemicite_encoded, "medium")
+
+        # saison pluie approximation
+        saison_encoded = int(features.get("saison_encoded", 0))
+        if saison_encoded == 2:
+            semaines_depuis_pic = 4
+        elif saison_encoded == 1:
+            semaines_depuis_pic = 10
+        else:
+            semaines_depuis_pic = 20
+
+        # cas historiques 4 semaines
+        cas_historiques = int(
+            features.get("cas_lag_1sem", 0)
+            + features.get("cas_lag_2sem", 0)
+            + features.get("cas_lag_3sem", 0)
+            + features.get("cas_lag_4sem", 0)
+        )
+
+        # ─────────────────────────────
+        # 4. RESPONSE FINAL (IMPORTANT)
+        # ─────────────────────────────
+        result = {
+            "temperature_moy_c": features.get("temperature_moy_c", 0.0),
+            "precipitations_7j_mm": features.get("precipitations_7j_mm", 0.0),
+            "precipitations_14j_mm": features.get("precipitations_14j_mm", 0.0),
+            "precipitations_30j_mm": features.get("precipitations_30j_mm", 0.0),
+            "humidite_moy_pct": features.get("humidite_moy_pct", 0.0),
+            "ndvi": features.get("ndvi"),
+            "zones_humides_pct": features.get("zones_humides_pct"),
+            "altitude_m": features.get("altitude_m", 0.0),
+
+            # dérivés métier
+            "saison": saison_obj.value,
+            "semaines_depuis_pics_pluies": semaines_depuis_pic,
+            "cas_historiques_4sem": cas_historiques,
+            "endemicite": endemicite_str,
+        }
+
+        # ─────────────────────────────
+        # 5. CACHE SAVE (IMPORTANT)
+        # ─────────────────────────────
+        await cache.set(
+            cache_key,
+            json.dumps(result, default=str),
+            ttl=3600
+        )
+
+        logger.info(f"[OK] facteurs-risque {region_id}")
+
+        return result
+
+    except Exception as e:
+        logger.exception(f"Erreur get_facteurs_risque {region_id}")
+        raise HTTPException(
+            status_code=503,
+            detail=str(e)
+        )
 
 @router.get(
     "/tendance/{region_id}",
