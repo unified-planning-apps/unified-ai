@@ -112,7 +112,7 @@ NASA_POWER_PARAMS = [
 class BackfillStats:
     """Statistiques d'un job de backfill."""
     source:          str
-    region_code:     str
+    region_id:     str
     date_debut:      date
     date_fin:        date
     n_records_total: int   = 0
@@ -236,7 +236,7 @@ class WeatherBackfiller:
     def _parse_nasa_response(
         self,
         data: Dict[str, Any],
-        region_code: str,
+        region_id: str,
     ) -> List[Dict[str, Any]]:
         """
         Parse la réponse NASA POWER en liste de dicts pour l'insertion.
@@ -275,14 +275,14 @@ class WeatherBackfiller:
                     ndvi_proxy = round(min(0.8, radiation / 25.0), 3) if radiation else None
 
                     record = {
-                        "region_code":      region_code,
-                        "timestamp_utc":    ts.isoformat(),
+                        "region_id":      region_id,
+                        "horodatage":    ts.isoformat(),
                         "temperature_c":    round(temp, 2),
                         "temp_min_c":       round(temp_min, 2) if temp_min else None,
                         "temp_max_c":       round(temp_max, 2) if temp_max else None,
                         "humidite_pct":     round(min(100.0, max(0.0, humidity)), 1),
-                        "precipitation_mm": round(max(0.0, precip or 0.0), 2),
-                        "vitesse_vent_kmh": wind_kmh,
+                        "precipitations_mm": round(max(0.0, precip or 0.0), 2),
+                        "vent_kmh": wind_kmh,
                         "ndvi":             ndvi_proxy,
                         "source_api":       "nasa_power",
                         "qualite_flag":     0,
@@ -300,7 +300,7 @@ class WeatherBackfiller:
 
     async def backfill_region(
         self,
-        region_code: str,
+        region_id: str,
         date_start: date,
         date_end: date,
         dry_run: bool = False,
@@ -308,15 +308,15 @@ class WeatherBackfiller:
         """Backfill météo complet pour une région et une période."""
         stats = BackfillStats(
             source="nasa_power",
-            region_code=region_code,
+            region_id=region_id,
             date_debut=date_start,
             date_fin=date_end,
         )
         t0 = time.perf_counter()
 
-        meta = get_region_metadata(region_code)
+        meta = get_region_metadata(region_id)
         if not meta:
-            log.error("Région inconnue : {}", region_code)
+            log.error("Région inconnue : {}", region_id)
             stats.statut = "erreur"
             return stats
 
@@ -335,21 +335,21 @@ class WeatherBackfiller:
         for win_start, win_end in windows:
             log.debug(
                 "NASA POWER {} : {} → {}",
-                region_code, win_start, win_end
+                region_id, win_start, win_end
             )
             try:
                 raw = await self._fetch_nasa_power(lat, lon, win_start, win_end)
-                records = self._parse_nasa_response(raw, region_code)
+                records = self._parse_nasa_response(raw, region_id)
                 all_records.extend(records)
                 stats.n_records_total += len(records)
                 log.debug(
                     "  {} records parsés pour {} [{} → {}]",
-                    len(records), region_code, win_start, win_end
+                    len(records), region_id, win_start, win_end
                 )
             except Exception as exc:
                 log.error(
                     "Erreur NASA POWER {} [{} → {}] : {}",
-                    region_code, win_start, win_end, exc
+                    region_id, win_start, win_end, exc
                 )
                 stats.n_errors += 1
 
@@ -360,7 +360,7 @@ class WeatherBackfiller:
         elif dry_run:
             log.info(
                 "DRY-RUN {} : {} records à insérer",
-                region_code, len(all_records)
+                region_id, len(all_records)
             )
             stats.n_inserted = 0
 
@@ -369,7 +369,7 @@ class WeatherBackfiller:
 
         log_collecte(
             source="nasa_power",
-            region_id=region_code,
+            region_id=region_id,
             n_records=stats.n_inserted,
             duree_sec=stats.duree_sec,
             statut=stats.statut,
@@ -383,19 +383,27 @@ class WeatherBackfiller:
         Insertion en bulk avec ON CONFLICT DO NOTHING.
         Retourne (n_inserted, n_skipped).
         """
+        # NB : weather_observations est partitionnée par horodatage (PK
+        # composite (id, horodatage)). Aujourd'hui aucune contrainte UNIQUE
+        # ne porte sur (region_id, horodatage) — seuls des index non-uniques
+        # existent (idx_weather_region_time, idx_weather_region_ts). Sans la
+        # migration `uq_weather_region_horodatage` fournie séparément, ce
+        # ON CONFLICT échoue avec :
+        #   psycopg2.errors.InvalidColumnReference: there is no unique or
+        #   exclusion constraint matching the ON CONFLICT specification
         sql = text("""
             INSERT INTO public.weather_observations (
-                region_code, timestamp_utc,
+                region_id, horodatage,
                 temperature_c, temp_min_c, temp_max_c,
-                humidite_pct, precipitation_mm,
-                vitesse_vent_kmh, ndvi, source_api, qualite_flag
+                humidite_pct, precipitations_mm,
+                vent_kmh, ndvi, source_api, qualite_flag
             ) VALUES (
-                :region_code, :timestamp_utc,
+                :region_id, :horodatage,
                 :temperature_c, :temp_min_c, :temp_max_c,
-                :humidite_pct, :precipitation_mm,
-                :vitesse_vent_kmh, :ndvi, :source_api, :qualite_flag
+                :humidite_pct, :precipitations_mm,
+                :vent_kmh, :ndvi, :source_api, :qualite_flag
             )
-            ON CONFLICT (region_code, timestamp_utc) DO NOTHING;
+            ON CONFLICT (region_id, horodatage) DO NOTHING;
         """)
 
         inserted = 0
@@ -458,7 +466,7 @@ class MalariaBackfiller:
 
     async def backfill_from_who(
         self,
-        region_code: str,
+        region_id: str,
         date_start: date,
         date_end: date,
         dry_run: bool = False,
@@ -470,7 +478,7 @@ class MalariaBackfiller:
         """
         stats = BackfillStats(
             source="who_gho",
-            region_code=region_code,
+            region_id=region_id,
             date_debut=date_start,
             date_fin=date_end,
         )
@@ -493,7 +501,7 @@ class MalariaBackfiller:
         }
 
         records = []
-        meta = get_region_metadata(region_code)
+        meta = get_region_metadata(region_id)
         if not meta:
             stats.statut = "erreur"
             return stats
@@ -528,7 +536,7 @@ class MalariaBackfiller:
                     continue
 
                 records.append({
-                    "region_code":       region_code,
+                    "region_code":       region_id,
                     "semaine_iso":       semaine,
                     "annee":             year,
                     "date_debut_semaine": debut_semaine.isoformat(),
@@ -536,6 +544,8 @@ class MalariaBackfiller:
                     "cas_presumes":      None,
                     "deces":             None,
                     "tests_realises":    None,
+                    "district":          None,
+                    "dhis2_org_unit_id": None,
                     "source":            "who_gho_distribue",
                     "valide":            True,
                 })
@@ -547,7 +557,7 @@ class MalariaBackfiller:
             stats.n_inserted = inserted
             stats.n_skipped  = skipped
         elif dry_run:
-            log.info("DRY-RUN malaria WHO {} : {} records", region_code, len(records))
+            log.info("DRY-RUN malaria WHO {} : {} records", region_id, len(records))
 
         stats.duree_sec = round(time.perf_counter() - t0, 2)
         stats.statut    = "termine"
@@ -562,20 +572,20 @@ class MalariaBackfiller:
         Importe des données DHIS2 depuis un CSV exporté.
 
         Format CSV attendu (colonnes) :
-            region_code, semaine_iso, annee, date_debut_semaine,
+            region_id, semaine_iso, annee, date_debut_semaine,
             cas_confirmes, cas_presumes, deces, tests_realises,
             district, dhis2_org_unit_id
 
         Tous les autres formats sont ignorés avec warning.
         """
         REQUIRED_COLS = {
-            "region_code", "semaine_iso", "annee",
+            "region_id", "semaine_iso", "annee",
             "cas_confirmes",
         }
 
         stats = BackfillStats(
             source="dhis2_csv",
-            region_code="ALL",
+            region_id="ALL",
             date_debut=date(2020, 1, 1),
             date_fin=date.today(),
         )
@@ -604,7 +614,7 @@ class MalariaBackfiller:
 
             for i, row in enumerate(reader, start=2):  # Line 2 = première donnée
                 try:
-                    region = row["region_code"].strip().upper()
+                    region = row["region_id"].strip().upper()
                     if region not in REGIONS_MADAGASCAR:
                         log.debug("Ligne {} : région inconnue '{}' — ignorée", i, region)
                         errors += 1
@@ -668,6 +678,11 @@ class MalariaBackfiller:
 
     def _bulk_insert_malaria(self, records: List[Dict]) -> Tuple[int, int]:
         """Insertion bulk avec ON CONFLICT DO NOTHING (unicité region+semaine+annee+source)."""
+        # NB : malaria_observations est partitionnée par date_debut_semaine
+        # (PK composite (id, date_debut_semaine)). Toute contrainte UNIQUE
+        # doit donc inclure la colonne de partitionnement — voir la migration
+        # `uq_malaria_region_periode` (region_code, semaine_iso, annee, source,
+        # date_debut_semaine) fournie séparément.
         sql = text("""
             INSERT INTO public.malaria_observations (
                 region_code, semaine_iso, annee, date_debut_semaine,
@@ -678,7 +693,8 @@ class MalariaBackfiller:
                 :cas_confirmes, :cas_presumes, :deces, :tests_realises,
                 :district, :dhis2_org_unit_id, :source, :valide
             )
-            ON CONFLICT (region_code, semaine_iso, annee, source) DO NOTHING;
+            ON CONFLICT (region_code, semaine_iso, annee, source, date_debut_semaine)
+            DO NOTHING;
         """)
         inserted = 0
         for i in range(0, len(records), self.batch_size):
@@ -698,7 +714,7 @@ class NutritionBackfiller:
     Import historique nutrition depuis fichiers CSV d'enquêtes SMART / UNICEF.
 
     Format CSV attendu :
-        region_code, date_enquete, gam_pct, mam_pct, sam_pct,
+        region_id, date_enquete, gam_pct, mam_pct, sam_pct,
         groupe_cible, n_enfants_enquetes, score_sca, source
 
     Les données nutrition sont rares (1–4 enquêtes/an par région) —
@@ -706,7 +722,7 @@ class NutritionBackfiller:
     """
 
     REQUIRED_COLS = {
-        "region_code", "date_enquete", "gam_pct", "groupe_cible",
+        "region_id", "date_enquete", "gam_pct", "groupe_cible",
     }
 
     def __init__(self, engine: Engine, batch_size: int = BATCH_SIZE_DEFAULT):
@@ -721,7 +737,7 @@ class NutritionBackfiller:
         """Import depuis CSV d'enquêtes SMART."""
         stats = BackfillStats(
             source="nutrition_csv",
-            region_code="ALL",
+            region_id="ALL",
             date_debut=date(2010, 1, 1),
             date_fin=date.today(),
         )
@@ -747,7 +763,7 @@ class NutritionBackfiller:
 
             for i, row in enumerate(reader, start=2):
                 try:
-                    region   = row["region_code"].strip().upper()
+                    region   = row["region_id"].strip().upper()
                     if region not in REGIONS_MADAGASCAR:
                         errors += 1
                         continue
@@ -812,6 +828,11 @@ class NutritionBackfiller:
         return stats
 
     def _bulk_insert_nutrition(self, records: List[Dict]) -> Tuple[int, int]:
+        # NB : nutrition_observations n'a aujourd'hui aucune contrainte UNIQUE
+        # (seule la PK sur `id`). Un "ON CONFLICT DO NOTHING" sans cible est
+        # un no-op silencieux : il n'empêche AUCUN doublon. Voir la migration
+        # `uq_nutrition_region_enquete` fournie séparément (region_code,
+        # date_enquete, groupe_cible, source).
         sql = text("""
             INSERT INTO public.nutrition_observations (
                 region_code, date_enquete,
@@ -826,7 +847,8 @@ class NutritionBackfiller:
                 :n_enfants_enquetes, :score_sca,
                 :source, :metadata::jsonb
             )
-            ON CONFLICT DO NOTHING;
+            ON CONFLICT (region_code, date_enquete, groupe_cible, source)
+            DO NOTHING;
         """)
         inserted = 0
         for i in range(0, len(records), self.batch_size):
@@ -956,7 +978,7 @@ class BackfillOrchestrator:
                     log.error("  Échec météo {} : {}", code, exc)
                     self.checkpoint.regions_en_erreur.append(code)
                     return BackfillStats(
-                        source="nasa_power", region_code=code,
+                        source="nasa_power", region_id=code,
                         date_debut=self.date_start, date_fin=self.date_end,
                         statut="erreur", n_errors=1,
                     )
@@ -1003,7 +1025,7 @@ class BackfillOrchestrator:
                 except Exception as exc:
                     log.error("  Échec WHO GHO {} : {}", code, exc)
                     return BackfillStats(
-                        source="who_gho", region_code=code,
+                        source="who_gho", region_id=code,
                         date_debut=self.date_start, date_fin=self.date_end,
                         statut="erreur", n_errors=1,
                     )
@@ -1028,7 +1050,7 @@ class BackfillOrchestrator:
             )
             log.info(
                 "  Format attendu : data/raw/nutrition_smart_surveys.csv\n"
-                "  Colonnes : region_code, date_enquete, gam_pct, mam_pct, "
+                "  Colonnes : region_id, date_enquete, gam_pct, mam_pct, "
                 "sam_pct, groupe_cible, n_enfants_enquetes, score_sca, source"
             )
             return
@@ -1044,9 +1066,13 @@ class BackfillOrchestrator:
     def _refresh_views(self) -> None:
         """Rafraîchit les vues matérialisées après le backfill."""
         log.info("Rafraîchissement des vues matérialisées...")
+        # NB : le schéma "ml" n'existe pas dans malaria_db (\d ne liste que
+        # public et topology) et "ml_predictions" est une table normale, pas
+        # une vue matérialisée. La ligne "ml.mv_latest_predictions" a été
+        # retirée : elle échouait systématiquement (silencieusement avalée
+        # par le except Exception ci-dessous).
         views = [
             "public.mv_malaria_weekly_summary",
-            "ml.mv_latest_predictions",
             "public.mv_nutrition_status",
         ]
         with self.engine.begin() as conn:
@@ -1201,7 +1227,7 @@ def main() -> None:
 
     # Connexion DB
     engine = sa.create_engine(
-        settings.database_url,
+        settings.database.sync_url,
         pool_pre_ping=True,
         pool_size=10,
         max_overflow=5,
