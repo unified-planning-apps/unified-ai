@@ -21,6 +21,24 @@ Appelé par :
   - src/data_collection/scheduler.py (_calculer_prediction_combinee)
   - ml/training_scripts/train_malaria.py
   - ml/training_scripts/train_nutrition.py
+
+─────────────────────────────────────────────────────────────────────
+CORRECTIF (voir conversation) :
+  - _fetch_malaria_from_db interrogeait une table "malaria_cases" qui
+    n'existe pas — la vraie table est "malaria_observations", avec des
+    noms de colonnes différents (region_code, semaine_iso,
+    date_debut_semaine...). Corrigé pour cibler le vrai schéma.
+  - _get_label() utilisait cette même requête cassée pour le label
+    d'entraînement malaria → retournait toujours None → 0 échantillon
+    réel, fallback synthétique silencieux à chaque entraînement.
+  - _fetch_nutrition_from_db demandait score_fcs/hdds/rcsi à
+    nutrition_status, qui ne les a pas (ils vivent dans
+    nutrition_food_security, déjà interrogée ailleurs). Corrigé.
+  - Ajout d'un flag training_mode : en entraînement batch, on ne veut
+    JAMAIS d'appel réseau live (NASA POWER / DHIS2 / WHO GHO) par
+    échantillon manquant — on retombe directement sur les valeurs par
+    défaut, sans latence ni dépendance réseau pendant l'entraînement.
+─────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -54,16 +72,22 @@ class FeatureEngineer:
     attendues par les modèles — les clés manquantes sont imputées à 0.0.
     """
 
-    def __init__(self, db=None):
+    def __init__(self, db=None, training_mode: bool = False):
         """
         Args:
             db : session SQLAlchemy async (optionnelle).
                  Si None ou FakeDB → mode dégradé avec données synthétiques.
+            training_mode : si True, désactive tous les fallbacks réseau
+                 live (NASA POWER, DHIS2, WHO GHO) quand la DB n'a pas la
+                 donnée — on utilise directement les valeurs par défaut.
+                 À utiliser systématiquement pour build_training_dataset :
+                 un entraînement ne doit jamais dépendre d'appels réseau.
         """
-        self._db       = db
-        self._weather  = WeatherProcessor()
-        self._health   = HealthProcessor()
-        self._geo      = GeoProcessor(db)
+        self._db            = db
+        self._training_mode = training_mode
+        self._weather       = WeatherProcessor()
+        self._health        = HealthProcessor()
+        self._geo           = GeoProcessor(db)
 
     # ─────────────────────────────────────────────────────────────
     # API publique — contrats avec les routers et le scheduler
@@ -264,56 +288,66 @@ class FeatureEngineer:
         """
         Construit le dataset d'entraînement pour tous les scripts ML.
 
+        NB : force training_mode=True le temps de l'appel — un entraînement
+        batch ne doit jamais dépendre d'appels réseau live par échantillon
+        manquant (voir historique des correctifs en tête de fichier).
+
         Returns:
             (X: np.ndarray, y: np.ndarray, feature_names: list, dates: list)
         """
         import pandas as pd
 
-        rows_X = []
-        rows_y = []
-        rows_meta = []
+        training_mode_initial = self._training_mode
+        self._training_mode = True
+        try:
+            rows_X = []
+            rows_y = []
+            rows_meta = []
+            feat_names = MALARIA_FEATURE_NAMES if modele == "malaria" else NUTRITION_FEATURE_NAMES
 
-        date_courante = date_debut
-        while date_courante <= date_fin:
-            for region_id in region_ids:
-                try:
-                    if modele == "malaria":
-                        features = await self.build_malaria_features(
-                            region_id, date_courante
+            date_courante = date_debut
+            while date_courante <= date_fin:
+                for region_id in region_ids:
+                    try:
+                        if modele == "malaria":
+                            features = await self.build_malaria_features(
+                                region_id, date_courante
+                            )
+                            feat_names = MALARIA_FEATURE_NAMES
+                        else:
+                            features = await self.build_nutrition_features(
+                                region_id, date_courante
+                            )
+                            feat_names = NUTRITION_FEATURE_NAMES
+
+                        X_row = [float(features.get(n, 0.0)) for n in feat_names]
+                        y_row = await self._get_label(region_id, date_courante, modele)
+
+                        if y_row is not None:
+                            rows_X.append(X_row)
+                            rows_y.append(y_row)
+                            rows_meta.append({
+                                "region_id": region_id,
+                                "date": str(date_courante),
+                            })
+
+                    except Exception as exc:
+                        logger.debug(
+                            "Skip training sample {} {} : {}", region_id, date_courante, exc
                         )
-                        feat_names = MALARIA_FEATURE_NAMES
-                    else:
-                        features = await self.build_nutrition_features(
-                            region_id, date_courante
-                        )
-                        feat_names = NUTRITION_FEATURE_NAMES
 
-                    X_row = [float(features.get(n, 0.0)) for n in feat_names]
-                    y_row = await self._get_label(region_id, date_courante, modele)
+                date_courante += timedelta(weeks=1)  # Pas hebdomadaire
 
-                    if y_row is not None:
-                        rows_X.append(X_row)
-                        rows_y.append(y_row)
-                        rows_meta.append({
-                            "region_id": region_id,
-                            "date": str(date_courante),
-                        })
+            if not rows_X:
+                logger.warning("Dataset {} vide — 0 samples", modele)
+                return np.array([]), np.array([]), feat_names, []
 
-                except Exception as exc:
-                    logger.debug(
-                        "Skip training sample {} {} : {}", region_id, date_courante, exc
-                    )
-
-            date_courante += timedelta(weeks=1)  # Pas hebdomadaire
-
-        if not rows_X:
-            logger.warning("Dataset {} vide — 0 samples", modele)
-            return np.array([]), np.array([]), feat_names, []
-
-        X = np.array(rows_X, dtype=np.float32)
-        y = np.array(rows_y, dtype=np.float32)
-        logger.info("Dataset {} : {} samples × {} features", modele, X.shape[0], X.shape[1])
-        return X, y, feat_names, rows_meta
+            X = np.array(rows_X, dtype=np.float32)
+            y = np.array(rows_y, dtype=np.float32)
+            logger.info("Dataset {} : {} samples × {} features", modele, X.shape[0], X.shape[1])
+            return X, y, feat_names, rows_meta
+        finally:
+            self._training_mode = training_mode_initial
 
     # ─────────────────────────────────────────────────────────────
     # Helpers privés — sources de données
@@ -326,7 +360,7 @@ class FeatureEngineer:
         Récupère les données météo rolling depuis :
           1. Cache Redis (si disponible)
           2. DB PostgreSQL (weather_observations)
-          3. NASA POWER API (fallback externe)
+          3. NASA POWER API (fallback externe — désactivé en training_mode)
           4. Valeurs par défaut (dernier recours)
         """
         # Tentative 1 : DB
@@ -335,6 +369,13 @@ class FeatureEngineer:
         if historical:
             cleaned = self._weather.clean_series(historical)
             return self._weather.compute_rolling_features(cleaned, windows=[7, 14, 30])
+
+        if self._training_mode:
+            logger.debug(
+                "training_mode actif : pas de fallback NASA POWER pour {}, valeurs par défaut",
+                region_id
+            )
+            return self._weather._default_rolling_features([7, 14, 30])
 
         # Tentative 2 : NASA POWER API
         try:
@@ -362,8 +403,8 @@ class FeatureEngineer:
     ) -> Dict[str, float]:
         """
         Récupère les lags épidémiologiques paludisme :
-          1. DB (malaria_cases) → 5 dernières semaines
-          2. DHIS2 (fallback externe)
+          1. DB (malaria_observations) → 5 dernières semaines
+          2. DHIS2 (fallback externe — désactivé en training_mode)
           3. Valeurs nulles (dernier recours)
         """
         # Tentative DB
@@ -372,6 +413,14 @@ class FeatureEngineer:
         if records:
             cleaned = self._health.clean_malaria_records(records)
             return self._health.compute_malaria_lags(cleaned, n_lags=4)
+
+        if self._training_mode:
+            logger.debug(
+                "training_mode actif : pas de fallback DHIS2/WHO GHO pour {}, lags à zéro",
+                region_id
+            )
+            return {f"cas_lag_{i}sem": 0.0 for i in range(1, 5)} | \
+                   {"taux_positivite_tdr_pct": 0.0}
 
         # Tentative DHIS2
         try:
@@ -399,6 +448,17 @@ class FeatureEngineer:
         if records:
             return self._health.compute_nutrition_lags(records, [1, 3, 6])
 
+        if self._training_mode:
+            logger.debug(
+                "training_mode actif : pas d'appel NutritionFetcher pour {}, valeurs par défaut",
+                region_id
+            )
+            return {
+                "gam_lag_1m": 5.0, "gam_lag_3m": 5.0,
+                "gam_lag_6m": 5.0, "sam_lag_1m": 1.5,
+                "variation_gam_3m": 0.0,
+            }
+
         # Estimation depuis profil régional
         from src.data_collection.nutrition_fetcher import NutritionFetcher
         try:
@@ -423,6 +483,19 @@ class FeatureEngineer:
         db_data = await self._fetch_fcs_from_db(region_id)
         if db_data:
             return db_data
+
+        if self._training_mode:
+            profile_defaults = {
+                "score_fcs": 35.0, "hdds": 5.0, "rcsi": 0.0,
+                "disponibilite_cereales": 2, "disponibilite_legumineuses": 2,
+                "disponibilite_proteines_animales": 1,
+                "disponibilite_legumes": 2, "disponibilite_fruits": 2,
+            }
+            logger.debug(
+                "training_mode actif : pas d'appel NutritionFetcher (FCS) pour {}, valeurs par défaut",
+                region_id
+            )
+            return profile_defaults
 
         try:
             from src.data_collection.nutrition_fetcher import NutritionFetcher
@@ -455,6 +528,16 @@ class FeatureEngineer:
         if db_data:
             return db_data
 
+        if self._training_mode:
+            logger.debug(
+                "training_mode actif : pas d'appel NutritionFetcher (prix) pour {}, valeurs par défaut",
+                region_id
+            )
+            return {
+                "prix_riz_kg": 1800.0, "prix_manioc_kg": 400.0,
+                "variation_prix_pct_1m": 0.0,
+            }
+
         try:
             from src.data_collection.nutrition_fetcher import NutritionFetcher
             fetcher = NutritionFetcher()
@@ -473,18 +556,19 @@ class FeatureEngineer:
         Récupère le score paludisme depuis le cache Redis pour la feature croisée.
         Retourne 0.3 (valeur de base) si non disponible.
         """
-        try:
-            import redis
-            import json as _json
-            from config.settings import settings
-            r = redis.Redis.from_url(settings.redis.url, decode_responses=True)
-            key = f"unicef:mdg:malaria:risque:{region_id}:14"
-            cached = r.get(key)
-            if cached:
-                data = _json.loads(cached)
-                return float(data.get("score_risque", 0.3))
-        except Exception:
-            pass
+        if not self._training_mode:
+            try:
+                import redis
+                import json as _json
+                from config.settings import settings
+                r = redis.Redis.from_url(settings.redis.url, decode_responses=True)
+                key = f"unicef:mdg:malaria:risque:{region_id}:14"
+                cached = r.get(key)
+                if cached:
+                    data = _json.loads(cached)
+                    return float(data.get("score_risque", 0.3))
+            except Exception:
+                pass
 
         # Estimation simple depuis l'endémicité
         geo = self._geo.get_geo_features(region_id)
@@ -536,7 +620,19 @@ class FeatureEngineer:
     async def _fetch_malaria_from_db(
         self, region_id: str, target_date: date, weeks: int = 6
     ) -> List[Dict]:
-        """Charge les dernières semaines de cas depuis malaria_cases."""
+        """
+        Charge les dernières semaines de cas depuis malaria_observations
+        (CORRIGÉ — la table réelle n'est pas "malaria_cases" et ses
+        colonnes sont region_code / semaine_iso / date_debut_semaine, pas
+        region_id / semaine_epidemio / date_rapport).
+
+        Le taux d'incidence pour 1000 et le taux de positivité TDR sont
+        recalculés ici à partir des colonnes réellement disponibles
+        (cas_confirmes, tests_realises, taux_positivite généré, et
+        population_estimee de la table regions), pour préserver le
+        contrat de clés attendu par HealthProcessor.compute_malaria_lags
+        et _get_label (taux_incidence_pour_mille, taux_positivite_tdr_pct).
+        """
         if not self._is_real_db():
             return []
         try:
@@ -545,14 +641,27 @@ class FeatureEngineer:
             result = await self._db.execute(
                 text("""
                     SELECT
-                        region_id, annee, semaine_epidemio, date_rapport,
-                        cas_confirmes, cas_confirmes_mixte, deces, hospitalisations,
-                        taux_incidence_pour_mille, taux_positivite_tdr_pct,
-                        population_a_risque, source, fiabilite_donnees
-                    FROM malaria_cases
-                    WHERE region_id = :region_id
-                      AND date_rapport BETWEEN :date_debut AND :date_fin
-                    ORDER BY annee, semaine_epidemio
+                        m.region_code AS region_id,
+                        m.annee,
+                        m.semaine_iso AS semaine_epidemio,
+                        m.date_debut_semaine AS date_rapport,
+                        m.cas_confirmes,
+                        m.cas_presumes,
+                        m.deces,
+                        m.tests_realises,
+                        COALESCE(m.taux_positivite, 0) * 100 AS taux_positivite_tdr_pct,
+                        CASE WHEN r.population_estimee > 0
+                             THEN round((m.cas_confirmes::numeric / r.population_estimee) * 1000, 4)
+                             ELSE 0
+                        END AS taux_incidence_pour_mille,
+                        r.population_estimee AS population_a_risque,
+                        m.source,
+                        m.valide
+                    FROM malaria_observations m
+                    JOIN regions r ON r.code = m.region_code
+                    WHERE m.region_code = :region_id
+                      AND m.date_debut_semaine BETWEEN :date_debut AND :date_fin
+                    ORDER BY m.annee, m.semaine_iso
                 """),
                 {"region_id": region_id, "date_debut": str(date_debut),
                  "date_fin": str(target_date)}
@@ -565,7 +674,12 @@ class FeatureEngineer:
     async def _fetch_nutrition_from_db(
         self, region_id: str, months: int = 7
     ) -> List[Dict]:
-        """Charge l'historique GAM depuis nutrition_status."""
+        """
+        Charge l'historique GAM depuis nutrition_status
+        (CORRIGÉ — score_fcs/hdds/rcsi retirés : ces colonnes n'existent
+        pas dans nutrition_status, elles vivent dans nutrition_food_security
+        qui est déjà interrogée séparément par _fetch_fcs_from_db).
+        """
         if not self._is_real_db():
             return []
         try:
@@ -574,8 +688,7 @@ class FeatureEngineer:
             result = await self._db.execute(
                 text("""
                     SELECT
-                        region_id, date_observation, gam_pct, sam_pct, mam_pct,
-                        score_fcs, hdds, rcsi, source
+                        region_id, date_observation, gam_pct, sam_pct, mam_pct, source
                     FROM nutrition_status
                     WHERE region_id = :region_id
                       AND date_observation >= :date_debut

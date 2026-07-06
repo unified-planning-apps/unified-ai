@@ -15,7 +15,7 @@ __pycache__/
 # Data / ML artifacts
 data/raw/
 data/processed/
-data/models/
+# data/models/
 ml/experiments/
 
 # Logs

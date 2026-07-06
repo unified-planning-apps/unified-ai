@@ -326,7 +326,7 @@ def inserer_nutrition(engine: Engine, records: List[Dict[str, Any]], batch_size:
             :gam_pct, :mam_pct, :sam_pct,
             :classification_oms, :groupe_cible,
             :n_enfants_enquetes, :score_sca,
-            :source, :metadata::jsonb
+            :source, CAST(:metadata AS jsonb)
         )
         ON CONFLICT (region_code, date_enquete, groupe_cible, source)
         DO NOTHING;

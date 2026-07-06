@@ -367,6 +367,10 @@ class WeatherBackfiller:
         stats.duree_sec = round(time.perf_counter() - t0, 2)
         stats.statut    = "partiel" if stats.n_errors > 0 else "termine"
 
+        log.info(
+            "  {} : {} récupérés depuis NASA POWER | {} insérés | {} déjà présents (skip)",
+            region_id, stats.n_records_total, stats.n_inserted, stats.n_skipped
+        )
         log_collecte(
             source="nasa_power",
             region_id=region_id,
@@ -845,7 +849,7 @@ class NutritionBackfiller:
                 :gam_pct, :mam_pct, :sam_pct,
                 :classification_oms, :groupe_cible,
                 :n_enfants_enquetes, :score_sca,
-                :source, :metadata::jsonb
+                :source, CAST(:metadata AS jsonb)
             )
             ON CONFLICT (region_code, date_enquete, groupe_cible, source)
             DO NOTHING;
@@ -1137,8 +1141,8 @@ class BackfillOrchestrator:
         log.info("Détail par source :")
         for src, d in rapport["detail_par_source"].items():
             log.info(
-                "  {:<25} : {:>8,} insérés | {:>5,} erreurs",
-                src, d["n_inserted"], d["n_errors"]
+                "  {:<25} : {:>8,} insérés | {:>8,} déjà présents | {:>5,} erreurs",
+                src, d["n_inserted"], d["n_skipped"], d["n_errors"]
             )
         if rapport["regions_en_erreur"]:
             log.warning("Régions en erreur : {}", rapport["regions_en_erreur"])
