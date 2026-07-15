@@ -1,40 +1,70 @@
 version: "3.9"
 
+x-api-common: &api-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://unicef:unicef123@postgres:5432/unicef
+    DATABASE_SYNC_URL: postgresql://unicef:unicef123@postgres:5432/unicef
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/2
+    CELERY_RESULT_BACKEND: redis://redis:6379/3
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: minioadmin
+    MINIO_SECRET_KEY: minioadmin
+    MINIO_BUCKET_REPORTS: unicef-reports
+    MINIO_BUCKET_MODELS: ml-models
+    MINIO_SECURE: "false"
+    PYTHONPATH: /app
+    APP_ROOT: /app
+  volumes:
+    - .:/app
+    - /app/__pycache__
+
 services:
   postgres:
-    image: postgres:15-alpine
-    restart: always
+    image: postgis/postgis:15-3.4-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: unicef
       POSTGRES_PASSWORD: unicef123
       POSTGRES_DB: unicef
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U unicef"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U unicef -d unicef"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 15s
 
   redis:
     image: redis:7-alpine
-    restart: always
-    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly yes
+      - --maxmemory 256mb
+      - --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 5s
 
   minio:
     image: minio/minio:latest
-    restart: always
+    restart: unless-stopped
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -48,32 +78,52 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://unicef:unicef123@postgres:5432/unicef
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/2
-      CELERY_RESULT_BACKEND: redis://redis:6379/3
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET_REPORTS: unicef-reports
-      MINIO_BUCKET_MODELS: ml-models
-      APP_ENV: development
-      APP_DEBUG: "true"
-      SECRET_KEY: change-me
-      HOST: 0.0.0.0
-      PORT: "8000"
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/unicef-reports &&
+        mc mb --ignore-existing local/ml-models &&
+        echo 'MinIO buckets ready'
+      "
+
+  db-init:
+    <<: *api-common
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    command: python scripts/init_db.py
     volumes:
       - .:/app
+
+  db-seed:
+    # Uses seed_data.py (placed alongside docker-compose.yml) instead of
+    # seed_regions.py which targets a different, incompatible DB schema.
+    # The script is copied into the app directory so Python path resolution works.
+    <<: *api-common
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    restart: "no"
+    command: >
+      sh -c "cp /docker-seed/seed_data.py /app/scripts/seed_data.py &&
+             python /app/scripts/seed_data.py"
+    volumes:
+      - .:/app
+      - ./seed_data.py:/docker-seed/seed_data.py:ro
+
+  api:
+    <<: *api-common
+    restart: unless-stopped
     ports:
       - "8000:8000"
     depends_on:
@@ -83,76 +133,52 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    command: uvicorn src.api.main:create_application --host 0.0.0.0 --port 8000 --reload
+      db-seed:
+        condition: service_completed_successfully
+    command: >
+      uvicorn src.api.main:create_application
+      --factory
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir src
+      --log-level info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *api-common
     restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://unicef:unicef123@postgres:5432/unicef
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/2
-      CELERY_RESULT_BACKEND: redis://redis:6379/3
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      APP_ENV: development
-      SECRET_KEY: change-me
-    volumes:
-      - .:/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A src.data_collection.scheduler worker --loglevel=info
+      db-seed:
+        condition: service_completed_successfully
+    command: >
+      celery -A src.data_collection.scheduler worker
+      --loglevel=info
+      --concurrency=2
 
   celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *api-common
     restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://unicef:unicef123@postgres:5432/unicef
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/2
-      CELERY_RESULT_BACKEND: redis://redis:6379/3
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      APP_ENV: development
-      SECRET_KEY: change-me
-    volumes:
-      - .:/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A src.data_collection.scheduler beat --loglevel=info
-
-  db-init:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://unicef:unicef123@postgres:5432/unicef
-      SECRET_KEY: change-me
-    volumes:
-      - .:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: python scripts/init_db.py
-    restart: "no"
+      db-seed:
+        condition: service_completed_successfully
+    command: >
+      celery -A src.data_collection.scheduler beat
+      --loglevel=info
+      --scheduler celery.beat.PersistentScheduler
 
 volumes:
   postgres_data:
