@@ -1,0 +1,48 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+**/__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Environments
+.env
+.venv
+venv
+env
+
+# Editors
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data / model files (not needed in image — mounted or downloaded at runtime)
+Archive.zip
+Archive_extracted
+data.json
+organisation.json
+data/models/*.pkl
+data/models/*.joblib
+ml/notebooks
+
+# Logs
+*.log
+logs/
+
+# Docs (not needed at runtime)
+docs/
+
+# Test artifacts
+htmlcov/
+.coverage
