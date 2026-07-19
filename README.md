@@ -134,7 +134,7 @@ docker compose build
 ## Start all services
 
 ```bash
-docker compose up -d
+docker compose up
 ```
 
 ---

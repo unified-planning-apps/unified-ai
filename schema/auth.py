@@ -36,6 +36,17 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=6, example="nouveau_mdp")
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Corps de la requête POST /auth/forgot-password"""
+    email: str = Field(..., example="agent@sante.mg")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Corps de la requête POST /auth/reset-password"""
+    token:        str = Field(..., description="Token de réinitialisation reçu par email")
+    new_password: str = Field(..., min_length=6, example="nouveau_mdp")
+
+
 # ─────────────────────────────────────────────
 # Réponses
 # ─────────────────────────────────────────────

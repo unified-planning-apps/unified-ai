@@ -169,6 +169,89 @@ class AuthService:
         return True
 
     # ─────────────────────────────────────────────
+    # Réinitialisation de mot de passe (forgot / reset)
+    # ─────────────────────────────────────────────
+    #
+    # NOTE MODE DEV : aucun service SMTP n'est configuré pour l'instant.
+    # Décision projet : la vérification par email sera ajoutée plus tard.
+    # En attendant, le token de réinitialisation est journalisé, et retourné
+    # dans la réponse UNIQUEMENT hors production (settings.is_production).
+    # La réponse reste volontairement identique que l'email existe ou non,
+    # pour ne pas révéler quels comptes existent.
+
+    RESET_TOKEN_TTL_MINUTES = 30
+
+    async def forgot_password(self, email: str) -> Optional[str]:
+        """
+        Génère un token de réinitialisation si l'email correspond à un compte.
+        Retourne le token (à envoyer par email plus tard), ou None si aucun
+        compte ne correspond — l'appelant NE DOIT PAS exposer cette différence.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from jose import jwt as jose_jwt
+
+        from config.settings import settings
+
+        user = await self._get_by_email(email)
+        if user is None or not user.is_active:
+            logger.info("forgot_password: aucun compte actif pour cet email")
+            return None
+
+        expire = datetime.now(timezone.utc) + timedelta(minutes=self.RESET_TOKEN_TTL_MINUTES)
+        token = jose_jwt.encode(
+            {
+                "sub":     str(user.id),
+                "purpose": "password_reset",   # distinct des access tokens
+                "exp":     expire,
+                "iat":     datetime.now(timezone.utc),
+            },
+            settings.jwt.secret_key,
+            algorithm=settings.jwt.algorithm,
+        )
+
+        logger.info(
+            "Token de réinitialisation généré pour {} (valide {} min)",
+            user.username, self.RESET_TOKEN_TTL_MINUTES,
+        )
+        return token
+
+    async def reset_password(self, token: str, new_password: str) -> bool:
+        """
+        Réinitialise le mot de passe à partir d'un token `purpose=password_reset`.
+        Lève ValueError si le token est invalide, expiré, ou du mauvais type.
+        """
+        from jose import JWTError, jwt as jose_jwt
+
+        from config.settings import settings
+
+        try:
+            payload = jose_jwt.decode(
+                token,
+                settings.jwt.secret_key,
+                algorithms=[settings.jwt.algorithm],
+            )
+        except JWTError:
+            raise ValueError("Lien de réinitialisation invalide ou expiré.")
+
+        # Un access token normal ne doit JAMAIS permettre un reset.
+        if payload.get("purpose") != "password_reset":
+            raise ValueError("Lien de réinitialisation invalide ou expiré.")
+
+        user_id = int(payload.get("sub", 0))
+        stmt = select(User).where(User.id == user_id)
+        result = await self._db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if user is None or not user.is_active:
+            raise ValueError("Lien de réinitialisation invalide ou expiré.")
+
+        user.hashed_password = hash_password(new_password)
+        await self._db.flush()
+        logger.info("Mot de passe réinitialisé via token pour {}", user.username)
+        return True
+
+    # ─────────────────────────────────────────────
     # Helpers
     # ─────────────────────────────────────────────
 

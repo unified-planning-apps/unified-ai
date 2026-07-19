@@ -16,8 +16,10 @@ from loguru import logger
 
 from schema.auth import (
     ChangePasswordRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
 )
@@ -146,6 +148,71 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "MOT_DE_PASSE_INCORRECT", "message": str(exc)},
+        )
+
+
+# ─────────────────────────────────────────────
+# POST /auth/forgot-password  (public)
+# ─────────────────────────────────────────────
+
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_200_OK,
+    summary="Demander une réinitialisation de mot de passe",
+    description="""
+Génère un token de réinitialisation valable 30 minutes.
+
+**Mode développement** : aucun serveur email n'étant configuré, le lien de
+réinitialisation est retourné directement dans la réponse (`reset_token`).
+En production, il sera envoyé par email et jamais exposé dans la réponse.
+
+La réponse est identique que l'email existe ou non (anti-énumération).
+    """,
+)
+async def forgot_password(data: ForgotPasswordRequest, db: DbSession) -> dict:
+    """Génère un token de reset ; réponse générique anti-énumération."""
+    from config.settings import settings
+
+    service = AuthService(db)
+    token = await service.forgot_password(data.email)
+
+    response: dict = {
+        "message": (
+            "Si un compte existe avec cette adresse, "
+            "un lien de réinitialisation vient de lui être envoyé."
+        )
+    }
+
+    # DEV UNIQUEMENT : expose le token pour permettre le test end-to-end
+    # sans SMTP. Jamais en production.
+    if token is not None and not settings.is_production:
+        response["reset_token"] = token
+        response["dev_note"] = (
+            "Token exposé uniquement en mode développement (pas de SMTP configuré)."
+        )
+
+    return response
+
+
+# ─────────────────────────────────────────────
+# POST /auth/reset-password  (public)
+# ─────────────────────────────────────────────
+
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_200_OK,
+    summary="Réinitialiser le mot de passe avec un token",
+)
+async def reset_password(data: ResetPasswordRequest, db: DbSession) -> dict:
+    """Applique le nouveau mot de passe si le token de reset est valide."""
+    try:
+        service = AuthService(db)
+        await service.reset_password(data.token, data.new_password)
+        return {"message": "Mot de passe réinitialisé avec succès."}
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "TOKEN_INVALIDE", "message": str(exc)},
         )
 
 
