@@ -536,12 +536,35 @@ class ModelRegistry:
         self._mlflow_enabled = self._check_mlflow()
 
     def _check_mlflow(self) -> bool:
+        """
+        Vérifie que MLflow est disponible.
+
+        Affiche la véritable exception au lieu d'un simple message.
+        """
+
         try:
             import mlflow
-            mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+
+            logger.info("MLflow importé : version {}", mlflow.__version__)
+
+            logger.info(
+                "Tracking URI : {}",
+                settings.ml.mlflow_tracking_uri,
+            )
+
+            mlflow.set_tracking_uri(settings.ml.mlflow_tracking_uri)
+
+            # Vérifie qu'on peut communiquer avec le backend
+            client = mlflow.tracking.MlflowClient()
+            client.search_experiments()
+
+            logger.info("MLflow initialisé correctement.")
+
             return True
-        except ImportError:
-            logger.warning("MLflow non disponible — tracking désactivé")
+
+        except Exception as exc:
+            logger.exception("Impossible d'initialiser MLflow")
+
             return False
 
     def register(self, model: BasePredictor, stage: str = "production") -> None:
@@ -569,7 +592,7 @@ class ModelRegistry:
             return None
         try:
             import mlflow
-            mlflow.set_experiment(settings.mlflow_experiment_name)
+            mlflow.set_experiment(settings.ml.mlflow_experiment_name)
             with mlflow.start_run(run_name=f"{model.MODEL_NAME}_{datetime.utcnow().date()}") as run:
                 mlflow.log_params(params)
                 mlflow.log_metrics(metrics)

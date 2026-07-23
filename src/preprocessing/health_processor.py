@@ -68,6 +68,32 @@ class HealthProcessor:
     # Nettoyage épidémiologique
     # ─────────────────────────────────────────────
 
+
+    @staticmethod
+    def _to_date(value):
+        """
+        Convertit une valeur en objet date.
+
+        Accepte :
+            - datetime.date
+            - "YYYY-MM-DD"
+            - "YYYY-MM-DD HH:MM:SS"
+
+        Retourne date.min si invalide.
+        """
+        if value is None:
+            return date.min
+
+        if isinstance(value, date):
+            return value
+
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value[:10])
+            except Exception:
+                return date.min
+
+        return date.min
     def clean_malaria_records(
         self, records: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
@@ -307,60 +333,77 @@ class HealthProcessor:
     def compute_nutrition_lags(
         self,
         records: List[Dict[str, Any]],
+        reference_date: date,
         lags_months: List[int] = [1, 3, 6],
     ) -> Dict[str, float]:
         """
-        Calcule les lags GAM sur N mois précédents.
-        Retourne gam_lag_1m, gam_lag_3m, gam_lag_6m, variation_gam_3m.
+        Calcule les lags nutritionnels.
+
+        Parameters
+        ----------
+        records :
+            Historique nutrition.
+
+        reference_date :
+            Date de construction des features.
+
+        lags_months :
+            Liste des lags en mois.
+
+        Returns
+        -------
+        dict
         """
+
         if not records:
             return {
-                "gam_lag_1m": 0.0, "gam_lag_3m": 0.0,
-                "gam_lag_6m": 0.0, "sam_lag_1m": 0.0,
+                "gam_lag_1m": 0.0,
+                "gam_lag_3m": 0.0,
+                "gam_lag_6m": 0.0,
+                "sam_lag_1m": 0.0,
                 "variation_gam_3m": 0.0,
             }
 
-        sorted_records = sorted(records, key=lambda r: r.get("date_observation", ""))
-        features: Dict[str, float] = {}
+        sorted_records = sorted(
+            records,
+            key=lambda r: self._to_date(r.get("date_observation"))
+        )
 
-        days_per_month = 30
-        for lag_months in lags_months:
-            lag_days   = lag_months * days_per_month
-            target_date = date.today() - timedelta(days=lag_days)
-            target_str  = str(target_date)
+        features = {}
 
-            # Trouve le record le plus proche de la date cible
+        for lag in lags_months:
+
+            target = reference_date - timedelta(days=lag * 30)
+
             closest = min(
                 sorted_records,
                 key=lambda r: abs(
-                    (date.fromisoformat(
-                        r.get("date_observation", str(date.today()))[:10]
-                    ) - target_date).days
+                    (
+                        self._to_date(r.get("date_observation"))
+                        - target
+                    ).days
                 ),
-                default=None,
             )
 
-            if closest:
-                features[f"gam_lag_{lag_months}m"] = float(
-                    closest.get("gam_pct", 0)
-                )
-                if lag_months == 1:
-                    features["sam_lag_1m"] = float(closest.get("sam_pct", 0))
-            else:
-                features[f"gam_lag_{lag_months}m"] = 0.0
-                if lag_months == 1:
-                    features["sam_lag_1m"] = 0.0
+            features[f"gam_lag_{lag}m"] = float(
+                closest.get("gam_pct") or 0
+            )
 
-        # Variation GAM sur 3 mois
-        gam_actuel = float(sorted_records[-1].get("gam_pct", 0)) \
-            if sorted_records else 0.0
-        gam_3m_avant = features.get("gam_lag_3m", gam_actuel)
+            if lag == 1:
+                features["sam_lag_1m"] = float(
+                    closest.get("sam_pct") or 0
+                )
+
+        gam_current = float(
+            sorted_records[-1].get("gam_pct") or 0
+        )
+
         features["variation_gam_3m"] = round(
-            gam_actuel - gam_3m_avant, 2
+            gam_current - features["gam_lag_3m"],
+            2,
         )
 
         return features
-
     # ─────────────────────────────────────────────
     # Normalisation features nutrition pour ML
     # ─────────────────────────────────────────────

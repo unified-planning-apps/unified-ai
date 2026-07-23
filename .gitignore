@@ -17,6 +17,7 @@ data/raw/
 data/processed/
 # data/models/
 ml/experiments/
+mlruns/
 
 # Logs
 *.log

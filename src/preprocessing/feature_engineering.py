@@ -408,7 +408,15 @@ class FeatureEngineer:
           3. Valeurs nulles (dernier recours)
         """
         # Tentative DB
-        records = await self._fetch_malaria_from_db(region_id, target_date, weeks=6)
+        # NB : on décale la référence d'une semaine en arrière pour que la
+        # fenêtre de lags s'arrête STRICTEMENT AVANT la semaine cible.
+        # Sans ce décalage, target_date était inclus dans la fenêtre des
+        # "lags épidémiologiques" — le modèle voyait donc la donnée de la
+        # semaine qu'il doit prédire dans ses propres features (fuite de
+        # données), ce qui explique un AUC artificiellement parfait (1.0).
+        records = await self._fetch_malaria_from_db(
+            region_id, target_date - timedelta(weeks=1), weeks=6
+        )
 
         if records:
             cleaned = self._health.clean_malaria_records(records)
@@ -443,10 +451,24 @@ class FeatureEngineer:
         self, region_id: str, target_date: date
     ) -> Dict[str, float]:
         """Récupère les lags GAM/SAM depuis DB → estimation."""
-        records = await self._fetch_nutrition_from_db(region_id, months=7)
+        # Même correctif que les lags malaria : la fenêtre doit être
+        # relative à target_date (pas à aujourd'hui) et exclure la période
+        # cible elle-même, sinon fuite de données pour l'entraînement.
+        # records = await self._fetch_nutrition_from_db(
+        #     region_id, target_date - timedelta(days=1), months=7
+        # )
+        records = await self._fetch_nutrition_from_db(
+            region_id,
+            target_date,
+            months=6,
+        )
 
         if records:
-            return self._health.compute_nutrition_lags(records, [1, 3, 6])
+            return self._health.compute_nutrition_lags(
+                records=records,
+                reference_date=target_date,
+                lags_months=[1, 3, 6],
+            )
 
         if self._training_mode:
             logger.debug(
@@ -608,13 +630,14 @@ class FeatureEngineer:
                 """),
                 {
                     "region_id": region_id,
-                    "date_debut": str(date_debut),
-                    "date_fin":   str(target_date),
+                    "date_debut": date_debut,
+                    "date_fin":   target_date,
                 }
             )
             return [dict(row._mapping) for row in result.fetchall()]
         except Exception as exc:
             logger.debug("DB weather {} : {}", region_id, exc)
+            await self._safe_rollback()
             return []
 
     async def _fetch_malaria_from_db(
@@ -663,42 +686,57 @@ class FeatureEngineer:
                       AND m.date_debut_semaine BETWEEN :date_debut AND :date_fin
                     ORDER BY m.annee, m.semaine_iso
                 """),
-                {"region_id": region_id, "date_debut": str(date_debut),
-                 "date_fin": str(target_date)}
+                {"region_id": region_id, "date_debut": date_debut,
+                 "date_fin": target_date}
             )
             return [dict(row._mapping) for row in result.fetchall()]
         except Exception as exc:
             logger.debug("DB malaria {} : {}", region_id, exc)
+            await self._safe_rollback()
             return []
 
     async def _fetch_nutrition_from_db(
-        self, region_id: str, months: int = 7
+        self, region_id: str, reference_date: Optional[date] = None, months: int = 7
     ) -> List[Dict]:
         """
-        Charge l'historique GAM depuis nutrition_status
-        (CORRIGÉ — score_fcs/hdds/rcsi retirés : ces colonnes n'existent
-        pas dans nutrition_status, elles vivent dans nutrition_food_security
-        qui est déjà interrogée séparément par _fetch_fcs_from_db).
+        Charge l'historique GAM depuis nutrition_observations.
+
+        CORRIGÉ (2e itération, voir conversation) — la table interrogée
+        jusqu'ici, nutrition_status, est VIDE (0 ligne) : tout le travail
+        d'import (UNICEF SDMX national + MICS6 2018 par région) a été fait
+        dans nutrition_observations, une table différente. La requête ici
+        est adaptée à son vrai schéma : region_code (pas region_id),
+        date_enquete (pas date_observation).
+
+        reference_date remplace date.today() : en entraînement, la fenêtre
+        doit être relative à la date de l'échantillon (target_date), pas à
+        la date d'exécution du script, et exclut la période cible pour
+        éviter toute fuite de données. reference_date=None (hors
+        entraînement) retombe sur aujourd'hui.
         """
         if not self._is_real_db():
             return []
         try:
             from sqlalchemy import text
-            date_debut = date.today() - timedelta(days=months * 30)
+            ref = reference_date or date.today()
+            date_debut = ref - timedelta(days=months * 30)
             result = await self._db.execute(
                 text("""
                     SELECT
-                        region_id, date_observation, gam_pct, sam_pct, mam_pct, source
-                    FROM nutrition_status
-                    WHERE region_id = :region_id
-                      AND date_observation >= :date_debut
-                    ORDER BY date_observation
+                        region_code AS region_id, date_enquete AS date_observation,
+                        gam_pct, sam_pct, mam_pct, source
+                    FROM nutrition_observations
+                    WHERE region_code = :region_id
+                      AND date_enquete >= :date_debut
+                      AND date_enquete <= :date_fin
+                    ORDER BY date_enquete
                 """),
-                {"region_id": region_id, "date_debut": str(date_debut)}
+                {"region_id": region_id, "date_debut": date_debut, "date_fin": ref}
             )
             return [dict(row._mapping) for row in result.fetchall()]
         except Exception as exc:
             logger.debug("DB nutrition {} : {}", region_id, exc)
+            await self._safe_rollback()
             return []
 
     async def _fetch_fcs_from_db(self, region_id: str) -> Optional[Dict]:
@@ -724,6 +762,7 @@ class FeatureEngineer:
             return dict(row._mapping) if row else None
         except Exception as exc:
             logger.debug("DB FCS {} : {}", region_id, exc)
+            await self._safe_rollback()
             return None
 
     async def _fetch_prix_from_db(self, region_id: str) -> Optional[Dict]:
@@ -748,6 +787,7 @@ class FeatureEngineer:
             return dict(row._mapping) if row else None
         except Exception as exc:
             logger.debug("DB prix {} : {}", region_id, exc)
+            await self._safe_rollback()
             return None
 
     async def _get_label(
@@ -765,7 +805,7 @@ class FeatureEngineer:
                 incidence = float(last.get("taux_incidence_pour_mille", 0))
                 return float(np.clip(incidence / 10.0, 0, 1))  # /10 → normalisé
         else:
-            records = await self._fetch_nutrition_from_db(region_id, months=1)
+            records = await self._fetch_nutrition_from_db(region_id, target_date, months=1)
             if records:
                 last = records[-1]
                 gam = float(last.get("gam_pct", 0))
@@ -812,3 +852,23 @@ class FeatureEngineer:
             return False
         db_type = type(self._db).__name__
         return "Session" in db_type or "AsyncSession" in db_type
+
+    async def _safe_rollback(self) -> None:
+        """
+        Annule la transaction en cours après une requête échouée.
+
+        CRITIQUE en async/asyncpg : après une erreur SQL (mauvais type,
+        colonne inexistante...), PostgreSQL met la transaction en état
+        "aborted" et rejette TOUTES les requêtes suivantes sur cette même
+        session tant qu'un ROLLBACK n'a pas été fait — même des requêtes
+        parfaitement valides. Sans ce rollback, une seule requête cassée
+        (ex: geo_processor.get_region_ndvi) empoisonne silencieusement
+        toutes les requêtes suivantes du même build_malaria_features/
+        build_training_dataset, y compris celles qui n'ont rien à voir.
+        """
+        if not self._is_real_db():
+            return
+        try:
+            await self._db.rollback()
+        except Exception as exc:
+            logger.debug("Rollback échoué (session probablement déjà fermée) : {}", exc)

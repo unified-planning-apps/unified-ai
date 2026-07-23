@@ -11,8 +11,25 @@ Responsabilités :
 Note : Conçu pour fonctionner avec ou sans session DB active
 (compatible mode synchrone Celery FakeDB).
 
-Appelé par :ceux
+Appelé par :
   - src/preprocessing/feature_engineering.py
+
+─────────────────────────────────────────────────────────────────────
+CORRECTIF (voir conversation) :
+  - get_zones_humides_pct utilisait ST_Intersection(r.geom, w.geom), mais
+    la table regions n'a PAS de colonne "geom" (seulement centroid et
+    bbox_geom) — cette requête ne pouvait jamais fonctionner. geo_wetlands
+    a déjà sa propre colonne region_id : plus besoin d'intersection
+    spatiale, un simple filtre + ratio superficie suffit. La clé de
+    regions est aussi "code", pas "region_id".
+  - get_region_ndvi passait la date en str() — asyncpg (contrairement à
+    psycopg2) exige un objet date natif, pas une chaîne.
+  - Ajout d'un rollback après chaque requête échouée : sous asyncpg, une
+    requête cassée met la transaction en état "aborted" et fait échouer
+    TOUTES les requêtes suivantes sur la même session tant qu'un ROLLBACK
+    n'a pas été fait — y compris celles de feature_engineering.py qui
+    partage la même session.
+─────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -190,9 +207,14 @@ class GeoProcessor:
 
     async def get_zones_humides_pct(self, region_id: str) -> float:
         """
-        Requête PostGIS pour calculer le % de zones humides dans la région.
-        Utilise les couches shapefiles importées en DB (table geo_wetlands).
-        Retourne estimation heuristique si DB indisponible.
+        Calcule le % de zones humides dans la région à partir de
+        geo_wetlands.superficie_ha / regions.superficie_km2.
+
+        CORRIGÉ — l'ancienne requête faisait ST_Intersection(r.geom, w.geom)
+        mais regions n'a pas de colonne "geom" (seulement centroid et
+        bbox_geom) : cette requête ne pouvait jamais fonctionner. geo_wetlands
+        porte déjà sa propre colonne region_id, donc un simple filtre +
+        somme des superficies suffit, sans jointure spatiale.
         """
         if self._db is None or not self._is_real_db():
             return self._estimate_zones_humides(region_id)
@@ -202,24 +224,24 @@ class GeoProcessor:
             result = await self._db.execute(
                 text("""
                     SELECT
-                        COALESCE(
-                            ST_Area(
-                                ST_Intersection(r.geom, w.geom)
-                            ) / ST_Area(r.geom) * 100,
-                            0
-                        ) AS zones_humides_pct
+                        COALESCE(SUM(w.superficie_ha), 0) AS wetlands_ha,
+                        r.superficie_km2
                     FROM regions r
-                    LEFT JOIN geo_wetlands w
-                        ON ST_Intersects(r.geom, w.geom)
-                    WHERE r.region_id = :region_id
-                    LIMIT 1
+                    LEFT JOIN geo_wetlands w ON w.region_id = r.code
+                    WHERE r.code = :region_id
+                    GROUP BY r.superficie_km2
                 """),
                 {"region_id": region_id}
             )
             row = result.fetchone()
-            return round(float(row[0]), 2) if row else 0.0
+            if not row or not row.superficie_km2 or row.superficie_km2 <= 0:
+                return self._estimate_zones_humides(region_id)
+            superficie_ha = float(row.superficie_km2) * 100.0
+            pct = float(row.wetlands_ha) / superficie_ha * 100.0
+            return round(min(pct, 100.0), 2)
         except Exception as exc:
-            logger.debug("PostGIS zones_humides {} : {}", region_id, exc)
+            logger.debug("DB zones_humides {} : {}", region_id, exc)
+            await self._safe_rollback()
             return self._estimate_zones_humides(region_id)
 
     async def get_region_ndvi(
@@ -246,12 +268,13 @@ class GeoProcessor:
                     ORDER BY observation_date DESC
                     LIMIT 1
                 """),
-                {"region_id": region_id, "target_date": str(target)}
+                {"region_id": region_id, "target_date": target}
             )
             row = result.fetchone()
             return round(float(row[0]), 3) if row else self._estimate_ndvi(region_id)
         except Exception as exc:
             logger.debug("DB NDVI {} : {}", region_id, exc)
+            await self._safe_rollback()
             return self._estimate_ndvi(region_id)
 
     # ─────────────────────────────────────────────
@@ -316,6 +339,22 @@ class GeoProcessor:
         """Vérifie si la session DB est une vraie session async SQLAlchemy."""
         db_type = type(self._db).__name__
         return "Session" in db_type or "AsyncSession" in db_type
+
+    async def _safe_rollback(self) -> None:
+        """
+        Annule la transaction en cours après une requête échouée.
+
+        Important : self._db est la MÊME session partagée avec
+        FeatureEngineer (et HealthProcessor le cas échéant). Sans ce
+        rollback, une requête cassée ici empoisonne aussi les requêtes
+        suivantes faites ailleurs sur cette session.
+        """
+        if self._db is None or not self._is_real_db():
+            return
+        try:
+            await self._db.rollback()
+        except Exception as exc:
+            logger.debug("Rollback échoué (session probablement déjà fermée) : {}", exc)
 
     @staticmethod
     def _encode_endemicite(endemicite: str) -> int:

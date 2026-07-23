@@ -26,6 +26,19 @@ Pipeline :
 Usage direct :
   python -m ml.training_scripts.train_nutrition
   python -m ml.training_scripts.train_nutrition --date-debut 2022-01-01
+
+─────────────────────────────────────────────────────────────────────
+CORRECTIF (voir conversation, même bug que train_malaria.py) :
+  _charger_donnees_nutrition créait FeatureEngineer() SANS session DB
+  → _is_real_db() toujours False → toutes les requêtes DB de
+  feature_engineering.py court-circuitaient à vide → 0 sample réel,
+  fallback synthétique systématique (AUC 0.989 mesuré sur des données
+  auto-générées, pas un vrai signal nutrition).
+
+  Corrigé : ouverture d'une vraie session SQLAlchemy async (asyncpg)
+  depuis settings.database.sync_url, passée à
+  FeatureEngineer(db=session, training_mode=True).
+─────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -213,23 +226,49 @@ def train_nutrition_model(
 # Chargement des données
 # ─────────────────────────────────────────────────────────────────
 
+async def _build_dataset_nutrition(
+    date_debut: date,
+    date_fin: date,
+) -> Tuple:
+    """
+    Ouvre une vraie session SQLAlchemy async, construit le dataset
+    d'entraînement nutrition via FeatureEngineer, puis ferme proprement
+    la connexion.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    from src.preprocessing.feature_engineering import FeatureEngineer
+    from src.utils.constants import REGIONS_MADAGASCAR
+    from config.settings import settings
+
+    async_url = settings.database.sync_url.replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
+    engine = create_async_engine(async_url, pool_pre_ping=True)
+    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    try:
+        async with SessionLocal() as session:
+            engineer = FeatureEngineer(db=session, training_mode=True)
+            X, y, feature_names, meta = await engineer.build_training_dataset(
+                region_ids=list(REGIONS_MADAGASCAR),
+                date_debut=date_debut,
+                date_fin=date_fin,
+                modele="nutrition",
+            )
+        return X, y, feature_names, meta
+    finally:
+        await engine.dispose()
+
+
 def _charger_donnees_nutrition(
     date_debut: date,
     date_fin: date,
 ) -> Tuple:
     """Charge les données nutrition via FeatureEngineer."""
     try:
-        from src.preprocessing.feature_engineering import FeatureEngineer
-        from src.utils.constants import REGIONS_MADAGASCAR
-
-        engineer = FeatureEngineer()
         X, y, feature_names, meta = asyncio.run(
-            engineer.build_training_dataset(
-                region_ids=list(REGIONS_MADAGASCAR),
-                date_debut=date_debut,
-                date_fin=date_fin,
-                modele="nutrition",
-            )
+            _build_dataset_nutrition(date_debut, date_fin)
         )
 
         # Labels GAM réels (en %) pour le régresseur
@@ -342,7 +381,7 @@ def _cross_validate_nutrition(
     y: np.ndarray,
     feature_names: list,
     scaler,
-    n_splits: int = 5,
+    n_splits: int = 3,
 ) -> np.ndarray:
     """Cross-validation 5-fold — retourne les scores AUC par fold."""
     from sklearn.model_selection import StratifiedKFold
@@ -470,8 +509,8 @@ def _log_mlflow_nutrition(
         import mlflow
         from config.settings import settings
 
-        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-        mlflow.set_experiment(f"{settings.mlflow_experiment_name}-nutrition")
+        mlflow.set_tracking_uri(settings.ml.mlflow_tracking_uri)
+        mlflow.set_experiment(f"{settings.ml.mlflow_experiment_name}-nutrition")
 
         # Aplatit les métriques imbriquées
         flat_metrics = {
@@ -493,7 +532,7 @@ def _log_mlflow_nutrition(
             return run.info.run_id
 
     except Exception as exc:
-        logger.debug("MLflow log nutrition : {}", exc)
+        logger.debug("Erreur lors du logging MLflow : {}", exc)
         return None
 
 

@@ -29,6 +29,25 @@ Pipeline :
 Usage direct :
   python -m ml.training_scripts.train_malaria
   python -m ml.training_scripts.train_malaria --date-debut 2022-01-01 --date-fin 2024-01-01
+
+─────────────────────────────────────────────────────────────────────
+CORRECTIF (voir conversation) :
+  _charger_donnees_malaria créait FeatureEngineer() SANS session DB
+  (FeatureEngineer(db=None)) → _is_real_db() retournait toujours False
+  → toutes les requêtes DB de feature_engineering.py court-circuitaient
+  avec un résultat vide, AVANT même d'être exécutées. Résultat : 0
+  échantillon réel à chaque entraînement, fallback synthétique
+  silencieux — les AUC obtenus ne mesuraient que la capacité du modèle
+  à réapprendre la formule synthétique elle-même, pas un vrai signal
+  épidémiologique.
+
+  Corrigé : on crée maintenant une vraie session SQLAlchemy async
+  (asyncpg) à partir de settings.database.sync_url, et on la passe à
+  FeatureEngineer(db=session, training_mode=True). training_mode=True
+  désactive aussi les fallbacks réseau live (DHIS2/WHO GHO/NASA POWER)
+  pendant l'entraînement — un entraînement batch ne doit jamais
+  dépendre d'appels réseau par échantillon manquant.
+─────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -113,7 +132,9 @@ def train_malaria_model(
         )
 
         # ── 2. Split Train / Test ──────────────────────────────────
-        X_train, X_test, y_train, y_test = _train_test_split_malaria(X, y, test_size=0.20)
+        X_train, X_test, y_train, y_test = _train_test_split_malaria(
+            X, y, test_size=0.20, meta=meta
+        )
         logger.info(
             "Split — Train: {} | Test: {}",
             len(X_train), len(X_test)
@@ -165,10 +186,18 @@ def train_malaria_model(
         # ── 6. Évaluation ─────────────────────────────────────────
         logger.info("📊 Évaluation sur jeu de test...")
         X_test_scaled = scaler.transform(X_test)
-        metriques     = model.evaluate(X_test_scaled, y_test)
+        try:
+            metriques = model.evaluate(X_test_scaled, y_test)
+        except ValueError as exc:
+            logger.warning(
+                "Évaluation impossible ({}) — jeu de test probablement mono-classe "
+                "malgré le split par blocs. Vérifie la distribution de y_test.",
+                exc
+            )
+            metriques = {"auc_roc": 0.0, "erreur_evaluation": str(exc)}
 
-        # Cross-validation 5-fold
-        cv_scores = _cross_validate_malaria(model, X, y, feature_names, scaler)
+        # Cross-validation 5-fold (chronologique)
+        cv_scores = _cross_validate_malaria(model, X, y, feature_names, scaler, meta=meta)
         metriques["cv_auc_mean"] = round(float(np.mean(cv_scores)), 4)
         metriques["cv_auc_std"]  = round(float(np.std(cv_scores)),  4)
 
@@ -237,6 +266,44 @@ def train_malaria_model(
 # Chargement des données
 # ─────────────────────────────────────────────────────────────────
 
+async def _build_dataset_malaria(
+    date_debut: date,
+    date_fin: date,
+) -> Tuple[np.ndarray, np.ndarray, list, list]:
+    """
+    Ouvre une vraie session SQLAlchemy async, construit le dataset
+    d'entraînement malaria via FeatureEngineer, puis ferme proprement
+    la connexion. Isolé dans sa propre coroutine pour un seul appel
+    asyncio.run() au niveau de _charger_donnees_malaria.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    from src.preprocessing.feature_engineering import FeatureEngineer
+    from src.utils.constants import REGIONS_MADAGASCAR
+    from config.settings import settings
+
+    # settings.database.sync_url est du type postgresql://... (driver psycopg2).
+    # SQLAlchemy async a besoin du driver asyncpg — on bascule juste le schéma.
+    async_url = settings.database.sync_url.replace(
+        "postgresql://", "postgresql+asyncpg://", 1
+    )
+    engine = create_async_engine(async_url, pool_pre_ping=True)
+    SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    try:
+        async with SessionLocal() as session:
+            engineer = FeatureEngineer(db=session, training_mode=True)
+            X, y, feature_names, meta = await engineer.build_training_dataset(
+                region_ids=list(REGIONS_MADAGASCAR),
+                date_debut=date_debut,
+                date_fin=date_fin,
+                modele="malaria",
+            )
+        return X, y, feature_names, meta
+    finally:
+        await engine.dispose()
+
+
 def _charger_donnees_malaria(
     date_debut: date,
     date_fin: date,
@@ -246,18 +313,8 @@ def _charger_donnees_malaria(
     Retourne (X, y, feature_names, meta) ou (None, None, [], []) si échec.
     """
     try:
-        from src.preprocessing.feature_engineering import FeatureEngineer
-        from src.utils.constants import REGIONS_MADAGASCAR
-
-        engineer = FeatureEngineer()
-
         X, y, feature_names, meta = asyncio.run(
-            engineer.build_training_dataset(
-                region_ids=list(REGIONS_MADAGASCAR),
-                date_debut=date_debut,
-                date_fin=date_fin,
-                modele="malaria",
-            )
+            _build_dataset_malaria(date_debut, date_fin)
         )
 
         if len(X) < 50:
@@ -331,26 +388,63 @@ def _train_test_split_malaria(
     X: np.ndarray,
     y: np.ndarray,
     test_size: float = 0.20,
+    meta: Optional[list] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Split stratifié temporel (les données les plus récentes en test)."""
-    from sklearn.model_selection import train_test_split
+    """
+    Split par BLOCS mélangés (région + année-mois) — pas un split
+    aléatoire ligne par ligne, pas un pur découpage chronologique.
 
-    # Split stratifié sur les bins de y (pour équilibre des classes)
-    y_bins = np.digitize(y, bins=[0.25, 0.50, 0.75])
+    CORRIGÉ (voir conversation, 2e itération) : un split purement
+    chronologique (train=passé, test=futur) empêche bien la fuite entre
+    blocs WHO GHO à valeur constante, mais expose un autre problème sur
+    ces données : la période de test peut retomber entièrement dans un
+    seul bloc constant → une seule classe dans y_test → roc_auc_score
+    indéfini (ValueError).
 
-    try:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size,
-            random_state=42,
-            stratify=y_bins,
+    On regroupe donc les échantillons par bloc (region_id, année-mois),
+    puis on répartit des BLOCS ENTIERS (pas des lignes individuelles)
+    aléatoirement entre train/test. Ça conserve la propriété qui compte
+    (jamais deux lignes du même bloc constant des deux côtés à la fois)
+    tout en dispersant les blocs "haut risque" et "bas risque" à travers
+    tout le train ET tout le test, donc les deux classes restent
+    représentées.
+
+    Si `meta` absent ou incomplet, retombe sur un split aléatoire simple
+    (avec avertissement — perte de la garantie anti-fuite par bloc).
+    """
+    from sklearn.model_selection import GroupShuffleSplit, train_test_split
+
+    n = len(X)
+    if not meta or len(meta) != n:
+        logger.warning(
+            "Pas de métadonnées (region/date) pour grouper par bloc — "
+            "split aléatoire simple, risque de fuite intra-bloc"
         )
-    except ValueError:
-        # Fallback si stratification impossible
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42
-        )
+        return train_test_split(X, y, test_size=test_size, random_state=42)
 
-    return X_train, X_test, y_train, y_test
+    # Bloc = région + année-mois (proxy raisonnable pour "même valeur WHO GHO")
+    groups = np.array([
+        f"{m.get('region_id', 'na')}_{str(m.get('date', ''))[:7]}"
+        for m in meta
+    ])
+
+    y_bins = np.digitize(y, bins=[0.25])  # binaire, cohérent avec le seuil du classifieur
+
+    # Plusieurs tentatives avec des graines différentes pour retomber sur
+    # un split où les deux classes sont représentées côté test.
+    for seed in range(10):
+        splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+        train_idx, test_idx = next(splitter.split(X, y_bins, groups=groups))
+        if len(set(y_bins[test_idx])) >= 2 and len(set(y_bins[train_idx])) >= 2:
+            logger.debug("Split par blocs réussi (seed={})", seed)
+            return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
+
+    logger.warning(
+        "Impossible d'obtenir les 2 classes des deux côtés en groupant par bloc "
+        "après 10 tentatives — split aléatoire simple en dernier recours "
+        "(risque de fuite intra-bloc, à interpréter avec prudence)"
+    )
+    return train_test_split(X, y, test_size=test_size, random_state=42, stratify=y_bins)
 
 
 def _cross_validate_malaria(
@@ -360,20 +454,44 @@ def _cross_validate_malaria(
     feature_names: list,
     scaler,
     n_splits: int = 5,
+    meta: Optional[list] = None,
 ) -> np.ndarray:
-    """Cross-validation 5-fold — retourne les scores AUC par fold."""
-    from sklearn.model_selection import StratifiedKFold
+    """
+    Cross-validation par blocs (région + année-mois) — même logique que
+    _train_test_split_malaria : GroupKFold garantit qu'un bloc constant
+    n'est jamais partagé entre train et validation sur un même fold, sans
+    forcer un découpage strictement chronologique qui peut isoler une
+    seule classe dans un fold sur ce type de données.
+    """
+    from sklearn.model_selection import GroupKFold, StratifiedKFold
     from sklearn.metrics import roc_auc_score
     from src.models.malaria_predictor import MalariaPredictor
 
-    y_bins = np.digitize(y, bins=[0.25, 0.50, 0.75])
-    kf     = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    n = len(X)
+    if meta and len(meta) == n:
+        groups = np.array([
+            f"{m.get('region_id', 'na')}_{str(m.get('date', ''))[:7]}"
+            for m in meta
+        ])
+        kf = GroupKFold(n_splits=n_splits)
+        splits = list(kf.split(X, y, groups=groups))
+    else:
+        logger.warning("Pas de métadonnées pour grouper la CV — StratifiedKFold classique")
+        y_bins = np.digitize(y, bins=[0.25, 0.50, 0.75])
+        kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+        splits = list(kf.split(X, y_bins))
+
     scores = []
 
-    for fold, (train_idx, val_idx) in enumerate(kf.split(X, y_bins), 1):
+    for fold, (train_idx, val_idx) in enumerate(splits, 1):
         try:
             X_tr, X_val = X[train_idx], X[val_idx]
             y_tr, y_val = y[train_idx], y[val_idx]
+
+            y_true = (y_val >= 0.25).astype(int)
+            if len(set(y_true)) < 2:
+                logger.debug("CV Fold {} : une seule classe dans le fold, ignoré", fold)
+                continue
 
             # Nouveau scaler par fold
             from sklearn.preprocessing import StandardScaler
@@ -391,16 +509,14 @@ def _cross_validate_malaria(
             )
 
             y_pred = fold_model._predict_raw(X_val_sc)
-            y_true = (y_val >= 0.25).astype(int)
             auc = roc_auc_score(y_true, y_pred)
             scores.append(auc)
             logger.debug("CV Fold {} — AUC: {:.4f}", fold, auc)
 
         except Exception as exc:
             logger.warning("CV Fold {} échoué : {}", fold, exc)
-            scores.append(0.5)
 
-    return np.array(scores)
+    return np.array(scores) if scores else np.array([0.5])
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -479,8 +595,8 @@ def _log_mlflow_malaria(
         import mlflow
         from config.settings import settings
 
-        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-        mlflow.set_experiment(f"{settings.mlflow_experiment_name}-malaria")
+        mlflow.set_tracking_uri(settings.ml.mlflow_tracking_uri)
+        mlflow.set_experiment(f"{settings.ml.mlflow_experiment_name}-malaria")
 
         with mlflow.start_run(run_name=f"malaria_{model.MODEL_VERSION}") as run:
             mlflow.log_params(params)
